@@ -2,6 +2,7 @@ package io.github.dreamlike.deepseekvideooven.whisper;
 
 import io.github.dreamlike.deepseekvideooven.model.SubtitleSegment;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.IOException;
@@ -17,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.jar.JarFile;
 
 public final class WhisperLib implements AutoCloseable {
 
@@ -120,8 +122,8 @@ public final class WhisperLib implements AutoCloseable {
             var segments = new ArrayList<SubtitleSegment>(n);
 
             for (int i = 0; i < n; i++) {
-                long t0 = (long) GET_T0.invokeExact(ctx, i);
-                long t1 = (long) GET_T1.invokeExact(ctx, i);
+                long t0 = (long) GET_T0.invokeExact(ctx, i) * 10;
+                long t1 = (long) GET_T1.invokeExact(ctx, i) * 10;
                 var textSeg = (MemorySegment) GET_TEXT.invokeExact(ctx, i);
                 var text = textSeg.reinterpret(Long.MAX_VALUE).getString(0);
 
@@ -178,7 +180,7 @@ public final class WhisperLib implements AutoCloseable {
                 Files.copy(bin, tmpDir.resolve(bridgeLib));
                 tmpDir.resolve(bridgeLib).toFile().deleteOnExit();
             }
-
+            extractGgmlDeps(cl, tmpDir);
             System.load(tmpDir.resolve(whisperLib).toAbsolutePath().toString());
             System.load(tmpDir.resolve(bridgeLib).toAbsolutePath().toString());
         } catch (IOException e) {
@@ -186,18 +188,19 @@ public final class WhisperLib implements AutoCloseable {
         }
     }
 
-    private static final String[] GGML_DEPS = {
-            "libggml.so.0", "libggml-base.so.0", "libggml-cpu.so.0",
-            "libggml.0.dylib", "libggml-base.0.dylib", "libggml-cpu.0.dylib",
-            "ggml.dll", "ggml-base.dll", "ggml-cpu.dll"
-    };
-
     private static void extractGgmlDeps(ClassLoader cl, Path tmpDir) throws IOException {
+        final String[] GGML_DEPS = {
+                "libggml.so.0", "libggml-base.so.0", "libggml-cpu.so.0",
+                "libggml.0.dylib", "libggml-base.0.dylib", "libggml-cpu.0.dylib",
+                "ggml.dll", "ggml-base.dll", "ggml-cpu.dll"
+        };
         for (var dep : GGML_DEPS) {
             try (var in = cl.getResourceAsStream("native/" + dep)) {
                 if (in != null) {
                     Files.copy(in, tmpDir.resolve(dep));
-                    tmpDir.resolve(dep).toFile().deleteOnExit();
+                    File file = tmpDir.resolve(dep).toFile();
+                    file.deleteOnExit();
+                    System.load(file.getAbsolutePath());
                 }
             }
         }
