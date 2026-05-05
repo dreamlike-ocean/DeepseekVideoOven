@@ -1,0 +1,9 @@
+target/
+*.class
+*.jar
+*.dylib
+*.so
+*.dll
+.idea/
+*.iml
+.DS_Store

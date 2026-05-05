@@ -1,0 +1,32 @@
+[
+  {
+    "name": "io.github.dreamlike.deepseekvideooven.config.OvenConfig",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatRequest",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatResponse",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "io.github.dreamlike.deepseekvideooven.deepseek.dto.Message",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatResponse$Choice",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatResponse$Usage",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  }
+]
