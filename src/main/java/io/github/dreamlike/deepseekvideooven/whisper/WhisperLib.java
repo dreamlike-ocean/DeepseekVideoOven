@@ -2,6 +2,7 @@ package io.github.dreamlike.deepseekvideooven.whisper;
 
 import io.github.dreamlike.deepseekvideooven.model.SubtitleSegment;
 
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -12,6 +13,7 @@ import java.lang.invoke.MethodHandle;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public final class WhisperLib implements AutoCloseable {
@@ -148,21 +150,31 @@ public final class WhisperLib implements AutoCloseable {
     }
 
     private static void findAndLoadBridge() {
-        var os = System.getProperty("os.name").toLowerCase();
-        var libName = os.contains("mac") ? "libwhisper_bridge.dylib"
-                    : os.contains("win") ? "whisper_bridge.dll"
-                    : "libwhisper_bridge.so";
-        var searchPaths = List.of(
-                Path.of("target", "native-libs", libName),
-                Path.of(libName)
-        );
-        for (var p : searchPaths) {
-            if (Files.exists(p)) {
-                System.load(p.toAbsolutePath().toString());
-                return;
+        var whisperLib = System.mapLibraryName("whisper");
+        var bridgeLib = System.mapLibraryName("whisper_bridge");
+
+        try {
+            var tmpDir = Files.createTempDirectory("video-oven-native");
+            tmpDir.toFile().deleteOnExit();
+
+            var whisperResource = "/native/" + whisperLib;
+            var bridgeResource = "/native/" + bridgeLib;
+
+            for (var res : Arrays.asList(whisperResource, bridgeResource)) {
+                var out = tmpDir.resolve(res.substring("/native/".length()));
+                try (var in = WhisperLib.class.getResourceAsStream(res)) {
+                    if (in == null) {
+                        throw new RuntimeException("Native lib not found in classpath: " + res);
+                    }
+                    Files.copy(in, out);
+                    out.toFile().deleteOnExit();
+                }
             }
+
+            System.load(tmpDir.resolve(whisperLib).toAbsolutePath().toString());
+            System.load(tmpDir.resolve(bridgeLib).toAbsolutePath().toString());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to extract native libs from classpath", e);
         }
-        throw new RuntimeException("Cannot find " + libName +
-                ". Build native libs first: mvn generate-sources");
     }
 }

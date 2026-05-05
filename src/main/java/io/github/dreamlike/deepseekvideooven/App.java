@@ -35,20 +35,11 @@ public final class App {
 
         if (config.deepseekApiKey() == null || config.deepseekApiKey().isBlank()) {
             System.err.println("Error: DeepSeek API key not configured.");
-            System.err.println("  Set it in ~/.video-oven/config.json or via DEEPSEEK_API_KEY env var.");
+            System.err.println("  Set it in ./config.json or via DEEPSEEK_API_KEY env var.");
             System.exit(1);
         }
 
         var resolved = ToolDetector.resolve(config);
-
-        if (resolved.whisperModelPath() == null) {
-            System.err.println("""
-                    Error: Whisper model not found. Download a model file:
-                      curl -L https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin \\
-                        -o ~/.video-oven/models/ggml-small.bin
-                    Or configure whisperModelPath in ~/.video-oven/config.json""");
-            System.exit(1);
-        }
 
         var output = cli.output() != null
                 ? cli.output()
@@ -82,7 +73,7 @@ public final class App {
     private static CliArgs parseArgs(String[] args) {
         Path input = null;
         Path output = null;
-        Path configPath = Path.of(System.getProperty("user.home"), ".video-oven", "config.json");
+        Path configPath = Path.of("config.json");
         String lang = null;
         String model = null;
         String apiKey = null;
@@ -132,23 +123,27 @@ public final class App {
                 Options:
                   -i, --input <file>     Input video file (required)
                   -o, --output <file>    Output video file (default: input_zh.mp4)
-                  -c, --config <file>    Config file path (default: ~/.video-oven/config.json)
+                  -c, --config <file>    Config file path (default: ./config.json)
                   -l, --lang <code>      Source language hint (en/ja/ko/auto)
                   -m, --model <name>     DeepSeek model (default: deepseek-v4-pro)
                   -k, --api-key <key>    DeepSeek API key (overrides config)
                   -h, --help             Show this help
-                                
-                Config (~/.video-oven/config.json):
+
+                Config (./config.json):
                   {
+                    "ffmpegPath": "",
+                    "whisperModelPath": "~/.video-oven/models/ggml-small.bin",
                     "deepseekApiKey": "sk-xxx",
                     "deepseekModel": "deepseek-v4-pro",
                     "defaultSourceLang": "auto"
                   }
+                  (ffmpegPath and whisperModelPath are optional — auto-detected if omitted)
                                 
                 Prerequisites:
-                  - ffmpeg (brew install ffmpeg)
-                  - Whisper model (download to ~/.video-oven/models/ggml-small.bin)
-                  - DeepSeek API key
+                  - ffmpeg (https://ffmpeg.org/download.html)
+                  - Whisper model: ggml-*.bin in ./models/ or ~/.video-oven/models/
+                    Download: https://huggingface.co/ggerganov/whisper.cpp/tree/main
+                  - DeepSeek API key (https://platform.deepseek.com/api_keys)
                 """);
     }
 }

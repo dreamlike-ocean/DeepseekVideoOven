@@ -23,14 +23,17 @@ public final class ToolDetector {
 
         if (ffmpegPath == null) {
             throw new IllegalStateException(
-                    "ffmpeg not found. Install it: brew install ffmpeg");
+                    "ffmpeg not found. Install it: https://ffmpeg.org/download.html");
         }
         if (modelPath == null) {
-            var home = System.getProperty("user.home");
-            var modelsDir = Path.of(home, ".video-oven", "models");
-            throw new IllegalStateException(
-                    "Whisper model not found. Download ggml-small.bin to " + modelsDir +
-                    " or configure whisperModelPath in ~/.video-oven/config.json");
+            throw new IllegalStateException("""
+                    Whisper model not found. Download a ggml model file:
+                      - ggml-tiny.bin  (~75 MB)  for fast/lightweight
+                      - ggml-small.bin (~466 MB) recommended
+                      - ggml-medium.bin (~1.5 GB) for better accuracy
+                    URL: https://huggingface.co/ggerganov/whisper.cpp/tree/main
+                    Place it in ./models/ or ~/.video-oven/models/
+                    Or set whisperModelPath in ./config.json""");
         }
 
         return new ResolvedConfig(
@@ -45,13 +48,20 @@ public final class ToolDetector {
         if (configured != null && !configured.isBlank()) {
             if (Files.exists(Path.of(configured))) return configured;
         }
-        var knownPaths = System.getProperty("os.name").toLowerCase().contains("win")
-                ? List.of("C:\\ffmpeg\\bin\\ffmpeg.exe")
-                : List.of("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg");
+        if (canRun("ffmpeg", "-version")) return "ffmpeg";
+        var isWin = System.getProperty("os.name").toLowerCase().contains("win");
+        var knownPaths = isWin
+                ? List.of(
+                    "C:\\ffmpeg\\bin\\ffmpeg.exe",
+                    "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe")
+                : List.of(
+                    "/opt/homebrew/bin/ffmpeg",
+                    "/usr/local/bin/ffmpeg",
+                    "/usr/bin/ffmpeg",
+                    "/snap/bin/ffmpeg");
         for (var path : knownPaths) {
             if (Files.exists(Path.of(path))) return path;
         }
-        if (canRun("ffmpeg", "-version")) return "ffmpeg";
         return null;
     }
 
@@ -71,14 +81,19 @@ public final class ToolDetector {
         if (configured != null && !configured.isBlank()) {
             if (Files.exists(Path.of(configured))) return configured;
         }
+        var modelNames = List.of("ggml-large-v3.bin", "ggml-medium.bin", "ggml-small.bin",
+                "ggml-base.bin", "ggml-tiny.bin");
         var home = System.getProperty("user.home");
-        for (var name : List.of("ggml-large.bin", "ggml-medium.bin", "ggml-small.bin", "ggml-base.bin", "ggml-tiny.bin")) {
-            var p = Path.of(home, ".video-oven", "models", name);
-            if (Files.exists(p)) return p.toString();
-        }
-        for (var name : List.of("ggml-large.bin", "ggml-medium.bin", "ggml-small.bin", "ggml-base.bin")) {
-            var p = Path.of(home, ".cache", "whisper", name);
-            if (Files.exists(p)) return p.toString();
+        var searchDirs = List.of(
+                Path.of(""),                           // current dir
+                Path.of("models"),                     // ./models/
+                Path.of(home, ".video-oven", "models"), // ~/.video-oven/models/
+                Path.of(home, ".cache", "whisper"));    // ~/.cache/whisper/
+        for (var dir : searchDirs) {
+            for (var name : modelNames) {
+                var p = dir.resolve(name);
+                if (Files.exists(p)) return p.toAbsolutePath().toString();
+            }
         }
         return null;
     }

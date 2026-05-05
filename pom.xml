@@ -12,7 +12,7 @@
     <properties>
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <native.lib.dir>${project.build.directory}/native-libs</native.lib.dir>
+        <native.res.dir>${project.basedir}/src/main/resources/native</native.res.dir>
         <jackson.version>2.18.2</jackson.version>
         <main.class>io.github.dreamlike.deepseekvideooven.App</main.class>
         <skip.native.build>false</skip.native.build>
@@ -39,30 +39,36 @@
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.4.2</version>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.4.0</version>
                 <configuration>
-                    <archive>
-                        <manifest>
-                            <mainClass>${main.class}</mainClass>
-                            <addClasspath>true</addClasspath>
-                            <classpathPrefix>lib/</classpathPrefix>
-                        </manifest>
-                    </archive>
+                    <filesets>
+                        <fileset>
+                            <directory>${native.res.dir}</directory>
+                            <includes>
+                                <include>*.so</include>
+                                <include>*.dylib</include>
+                                <include>*.dll</include>
+                            </includes>
+                        </fileset>
+                    </filesets>
                 </configuration>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.8.1</version>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
                 <executions>
                     <execution>
-                        <id>copy-dependencies</id>
                         <phase>package</phase>
-                        <goals><goal>copy-dependencies</goal></goals>
+                        <goals><goal>shade</goal></goals>
                         <configuration>
-                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>${main.class}</mainClass>
+                                </transformer>
+                            </transformers>
                         </configuration>
                     </execution>
                 </executions>
@@ -74,6 +80,18 @@
                 <version>3.5.0</version>
                 <executions>
                     <execution>
+                        <id>whisper-cmake-clean</id>
+                        <phase>clean</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>sh</executable>
+                            <arguments>
+                                <argument>-c</argument>
+                                <argument>test -d ${project.basedir}/whisper.cpp/build &amp;&amp; cmake --build ${project.basedir}/whisper.cpp/build --target clean || true</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>whisper-cmake-configure</id>
                         <phase>generate-sources</phase>
                         <goals><goal>exec</goal></goals>
@@ -81,7 +99,8 @@
                             <executable>cmake</executable>
                             <workingDirectory>${project.basedir}/whisper.cpp</workingDirectory>
                             <arguments>
-                                <argument>-B</argument><argument>build</argument>
+                                <argument>-B</argument>
+                                <argument>build</argument>
                                 <argument>-DBUILD_SHARED_LIBS=ON</argument>
                                 <argument>-DCMAKE_BUILD_TYPE=Release</argument>
                             </arguments>
@@ -102,19 +121,7 @@
                             <skip>${skip.native.build}</skip>
                         </configuration>
                     </execution>
-                    <execution>
-                        <id>build-ffmpeg-bridge</id>
-                        <phase>generate-sources</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <executable>sh</executable>
-                            <arguments>
-                                <argument>-c</argument>
-                                <argument>mkdir -p ${native.lib.dir} &amp;&amp; gcc -shared -fPIC -O3 $(pkg-config --cflags libavformat libavcodec libavfilter libswresample libavutil 2>/dev/null || echo "-I/opt/homebrew/include") -o ${native.lib.dir}/libffmpeg_bridge.dylib ${project.basedir}/native/ffmpeg_bridge.c $(pkg-config --libs libavformat libavcodec libavfilter libswresample libavutil 2>/dev/null || echo "-L/opt/homebrew/lib -lavformat -lavcodec -lavfilter -lswresample -lavutil")</argument>
-                            </arguments>
-                            <skip>${skip.native.build}</skip>
-                        </configuration>
-                    </execution>
+
                     <execution>
                         <id>build-whisper-bridge</id>
                         <phase>generate-sources</phase>
@@ -123,7 +130,7 @@
                             <executable>sh</executable>
                             <arguments>
                                 <argument>-c</argument>
-                                <argument>mkdir -p ${native.lib.dir} &amp;&amp; gcc -shared -fPIC -O3 -I${project.basedir}/whisper.cpp/include -I${project.basedir}/whisper.cpp/ggml/include -o ${native.lib.dir}/libwhisper_bridge.dylib ${project.basedir}/native/whisper_bridge.c -L${project.basedir}/whisper.cpp/build/src -lwhisper -Wl,-rpath,@loader_path</argument>
+                                <argument>mkdir -p ${native.res.dir} &amp;&amp; gcc -shared -fPIC -O3 -I${project.basedir}/whisper.cpp/include -I${project.basedir}/whisper.cpp/ggml/include -o ${native.res.dir}/libwhisper_bridge.so ${project.basedir}/native/whisper_bridge.c -L${project.basedir}/whisper.cpp/build/src -lwhisper -Wl,-rpath,\$ORIGIN</argument>
                             </arguments>
                             <skip>${skip.native.build}</skip>
                         </configuration>
@@ -143,8 +150,8 @@
                         <configuration>
                             <skip>${skip.native.build}</skip>
                             <target>
-                                <mkdir dir="${native.lib.dir}"/>
-                                <copy todir="${native.lib.dir}" failonerror="false" quiet="true">
+                                <mkdir dir="${native.res.dir}"/>
+                                <copy todir="${native.res.dir}" failonerror="false" quiet="true">
                                     <fileset dir="${project.basedir}/whisper.cpp/build">
                                         <include name="*.dylib"/>
                                         <include name="*.so"/>
@@ -156,6 +163,11 @@
                                         <include name="*.dll"/>
                                     </fileset>
                                     <fileset dir="${project.basedir}/whisper.cpp/build/src/Release">
+                                        <include name="*.dll"/>
+                                    </fileset>
+                                    <fileset dir="${project.basedir}/whisper.cpp/build/ggml/src">
+                                        <include name="*.dylib"/>
+                                        <include name="*.so"/>
                                         <include name="*.dll"/>
                                     </fileset>
                                 </copy>

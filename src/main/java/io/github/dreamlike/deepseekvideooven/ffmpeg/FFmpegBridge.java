@@ -1,102 +1,160 @@
 package io.github.dreamlike.deepseekvideooven.ffmpeg;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.FunctionDescriptor;
-import java.lang.foreign.Linker;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SymbolLookup;
-import java.lang.foreign.ValueLayout;
-import java.lang.invoke.MethodHandle;
-import java.nio.file.Files;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public final class FFmpegBridge {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final MethodHandle EXTRACT_AUDIO;
-    private static final MethodHandle BURN_SUBTITLES;
-
-    static {
-        findAndLoad();
-        var lookup = SymbolLookup.loaderLookup();
-        try {
-            EXTRACT_AUDIO = LINKER.downcallHandle(
-                    lookup.find("ffmpeg_extract_audio").orElseThrow(),
-                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
-                            ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
-            );
-            BURN_SUBTITLES = LINKER.downcallHandle(
-                    lookup.find("ffmpeg_burn_subtitles").orElseThrow(),
-                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
-                            ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
-            );
-        } catch (Throwable e) {
-            throw new ExceptionInInitializerError(e);
-        }
-    }
+    private static final String FFMPEG = findFfmpeg();
 
     private FFmpegBridge() {}
 
-    private static void findAndLoad() {
-        var os = System.getProperty("os.name").toLowerCase();
-        var libName = os.contains("mac") ? "libffmpeg_bridge.dylib"
-                    : os.contains("win") ? "ffmpeg_bridge.dll"
-                    : "libffmpeg_bridge.so";
-        var searchPaths = List.of(
-                Path.of("target", "native-libs", libName),
-                Path.of(libName)
-        );
-        for (var p : searchPaths) {
-            if (Files.exists(p)) {
-                System.load(p.toAbsolutePath().toString());
-                return;
-            }
-        }
-        throw new RuntimeException("Cannot find " + libName);
+    private static String findFfmpeg() {
+        try {
+            var pb = new ProcessBuilder("ffmpeg", "-version");
+            pb.redirectErrorStream(true);
+            var p = pb.start();
+            var out = new String(p.getInputStream().readAllBytes());
+            p.waitFor(10, TimeUnit.SECONDS);
+            if (out.contains("ffmpeg version")) return "ffmpeg";
+        } catch (Exception ignored) {}
+        throw new RuntimeException("ffmpeg not found on PATH");
     }
 
     public static float[] extractAudio(Path videoPath) {
-        try (var arena = Arena.ofConfined()) {
-            var inputSeg = arena.allocateFrom(videoPath.toString());
-            var samplesPtrSeg = arena.allocate(ValueLayout.ADDRESS);
-            var lenSeg = arena.allocate(ValueLayout.JAVA_INT);
+        var cmd = List.of(
+                FFMPEG,
+                "-i", videoPath.toString(),
+                "-vn",
+                "-f", "f32le",
+                "-ar", "16000",
+                "-ac", "1",
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel", "error",
+                "pipe:"
+        );
 
-            int ret = (int) EXTRACT_AUDIO.invokeExact(inputSeg, samplesPtrSeg, lenSeg);
-            if (ret != 0) {
-                throw new RuntimeException("ffmpeg_extract_audio failed: " + ret);
-            }
-
-            var samplesPtr = samplesPtrSeg.get(ValueLayout.ADDRESS, 0);
-            int len = lenSeg.get(ValueLayout.JAVA_INT, 0);
-
-            if (len <= 0 || samplesPtr.equals(MemorySegment.NULL)) {
-                throw new RuntimeException("No audio extracted");
-            }
-
-            var samplesSeg = samplesPtr.reinterpret(len * 4L);
-            return samplesSeg.toArray(ValueLayout.JAVA_FLOAT);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Throwable e) {
-            throw new RuntimeException("Audio extraction failed", e);
+        Process p;
+        try {
+            p = new ProcessBuilder(cmd).start();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to start ffmpeg for audio extraction", e);
         }
+
+        var stderr = slurpAsync(p.getErrorStream());
+
+        byte[] raw;
+        try (var in = p.getInputStream()) {
+            raw = in.readAllBytes();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read ffmpeg audio output", e);
+        }
+
+        int exit;
+        try {
+            exit = p.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted waiting for ffmpeg", e);
+        }
+
+        String errText = stderr.join();
+        if (exit != 0 || raw.length == 0) {
+            throw new RuntimeException("ffmpeg audio extraction failed (exit " + exit + "): " + errText);
+        }
+
+        var buf = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN);
+        float[] samples = new float[raw.length / 4];
+        for (int i = 0; i < samples.length; i++) {
+            samples[i] = buf.getFloat();
+        }
+        return samples;
     }
 
     public static void burnSubtitles(Path videoPath, Path assPath, Path outputPath) {
-        try (var arena = Arena.ofConfined()) {
-            var inputSeg = arena.allocateFrom(videoPath.toString());
-            var assSeg = arena.allocateFrom(assPath.toString());
-            var outputSeg = arena.allocateFrom(outputPath.toString());
+        String assAbs = assPath.toAbsolutePath().toString();
+        String filter = "subtitles=" + escapeFilterPath(assAbs)
+                + ":force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2'";
 
-            int ret = (int) BURN_SUBTITLES.invokeExact(inputSeg, assSeg, outputSeg);
-            if (ret != 0) {
-                throw new RuntimeException("ffmpeg_burn_subtitles failed: " + ret);
-            }
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Throwable e) {
-            throw new RuntimeException("Subtitle burning failed", e);
+        var cmd = List.of(
+                FFMPEG,
+                "-i", videoPath.toString(),
+                "-vf", filter,
+                "-c:v", "libx264",
+                "-c:a", "copy",
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel", "error",
+                "-y",
+                outputPath.toString()
+        );
+
+        Process p;
+        try {
+            p = new ProcessBuilder(cmd).start();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to start ffmpeg for subtitle burning", e);
+        }
+
+        var stderr = slurpAsync(p.getErrorStream());
+
+        int exit;
+        try {
+            exit = p.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted waiting for ffmpeg", e);
+        }
+
+        String errText = stderr.join();
+        if (exit != 0) {
+            throw new RuntimeException("ffmpeg subtitle burning failed (exit " + exit + "): " + errText);
+        }
+    }
+
+    private static String escapeFilterPath(String path) {
+        return path.replace("\\", "\\\\")
+                   .replace(":", "\\:")
+                   .replace("'", "\\'");
+    }
+
+    private static StderrReader slurpAsync(InputStream stderr) {
+        var reader = new StderrReader(stderr);
+        var t = new Thread(reader, "ffmpeg-stderr");
+        t.setDaemon(true);
+        t.start();
+        return reader;
+    }
+
+    private static final class StderrReader implements Runnable {
+        private final InputStream in;
+        private final ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        private volatile boolean done;
+
+        StderrReader(InputStream in) { this.in = in; }
+
+        @Override
+        public void run() {
+            try (in) {
+                in.transferTo(buf);
+            } catch (IOException ignored) {}
+            done = true;
+        }
+
+        String join() {
+            try {
+                while (!done) Thread.onSpinWait();
+            } catch (Exception ignored) {}
+            return buf.toString();
         }
     }
 }
