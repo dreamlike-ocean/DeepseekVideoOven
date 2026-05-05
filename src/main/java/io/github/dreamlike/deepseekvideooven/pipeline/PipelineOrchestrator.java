@@ -11,10 +11,12 @@ public final class PipelineOrchestrator {
 
     private final DeepSeekClient client;
     private final Path modelPath;
+    private final String sourceLanguage;
 
-    public PipelineOrchestrator(DeepSeekClient client, Path modelPath) {
+    public PipelineOrchestrator(DeepSeekClient client, Path modelPath, String sourceLanguage) {
         this.client = client;
         this.modelPath = modelPath;
+        this.sourceLanguage = sourceLanguage;
     }
 
     public void process(Path input, Path output) throws IOException, InterruptedException {
@@ -22,7 +24,7 @@ public final class PipelineOrchestrator {
         try {
             try (var whisper = WhisperLib.load(modelPath)) {
                 var audio = AudioExtractor.extract(input);
-                var segments = SpeechRecognizer.transcribe(whisper, audio);
+                var segments = SpeechRecognizer.transcribe(whisper, audio, sourceLanguage);
 
                 if (segments.isEmpty()) {
                     System.out.println("No speech detected in video.");

@@ -7,5 +7,7 @@ target/
 .idea/
 *.iml
 .DS_Store
-config.json
+demo/config.json
 demo/
+dependency-reduced-pom.xml
+src/main/resources/native

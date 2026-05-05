@@ -3,6 +3,9 @@ package io.github.dreamlike.deepseekvideooven.whisper;
 import io.github.dreamlike.deepseekvideooven.model.SubtitleSegment;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -13,7 +16,6 @@ import java.lang.invoke.MethodHandle;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 public final class WhisperLib implements AutoCloseable {
@@ -153,28 +155,51 @@ public final class WhisperLib implements AutoCloseable {
         var whisperLib = System.mapLibraryName("whisper");
         var bridgeLib = System.mapLibraryName("whisper_bridge");
 
-        try {
+        var cl = WhisperLib.class.getClassLoader();
+        var whisperRes = "native/" + whisperLib;
+        var bridgeRes = "native/" + bridgeLib;
+
+        try (var in = cl.getResourceAsStream(whisperRes)) {
+            if (in == null) {
+                throw new RuntimeException("Native lib not found in classpath: " + whisperRes
+                        + ". Build with: mvn package");
+            }
             var tmpDir = Files.createTempDirectory("video-oven-native");
             tmpDir.toFile().deleteOnExit();
 
-            var whisperResource = "/native/" + whisperLib;
-            var bridgeResource = "/native/" + bridgeLib;
+            Files.copy(in, tmpDir.resolve(whisperLib));
+            tmpDir.resolve(whisperLib).toFile().deleteOnExit();
 
-            for (var res : Arrays.asList(whisperResource, bridgeResource)) {
-                var out = tmpDir.resolve(res.substring("/native/".length()));
-                try (var in = WhisperLib.class.getResourceAsStream(res)) {
-                    if (in == null) {
-                        throw new RuntimeException("Native lib not found in classpath: " + res);
-                    }
-                    Files.copy(in, out);
-                    out.toFile().deleteOnExit();
+            try (var bin = cl.getResourceAsStream(bridgeRes)) {
+                if (bin == null) {
+                    throw new RuntimeException("Native lib not found in classpath: " + bridgeRes
+                            + ". Build with: mvn package");
                 }
+                Files.copy(bin, tmpDir.resolve(bridgeLib));
+                tmpDir.resolve(bridgeLib).toFile().deleteOnExit();
             }
 
             System.load(tmpDir.resolve(whisperLib).toAbsolutePath().toString());
             System.load(tmpDir.resolve(bridgeLib).toAbsolutePath().toString());
         } catch (IOException e) {
             throw new RuntimeException("Failed to extract native libs from classpath", e);
+        }
+    }
+
+    private static final String[] GGML_DEPS = {
+            "libggml.so.0", "libggml-base.so.0", "libggml-cpu.so.0",
+            "libggml.0.dylib", "libggml-base.0.dylib", "libggml-cpu.0.dylib",
+            "ggml.dll", "ggml-base.dll", "ggml-cpu.dll"
+    };
+
+    private static void extractGgmlDeps(ClassLoader cl, Path tmpDir) throws IOException {
+        for (var dep : GGML_DEPS) {
+            try (var in = cl.getResourceAsStream("native/" + dep)) {
+                if (in != null) {
+                    Files.copy(in, tmpDir.resolve(dep));
+                    tmpDir.resolve(dep).toFile().deleteOnExit();
+                }
+            }
         }
     }
 }

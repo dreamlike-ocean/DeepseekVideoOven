@@ -34,8 +34,8 @@ native/whisper_bridge.c  →  libwhisper (submodule)        output → src/main/
 - C bridges are compiled during `generate-sources` phase directly into `src/main/resources/native/` so they're bundled in the JAR
 - Platform detection (`so`/`dylib`/`dll`) is done inline by the gcc shell command via `uname -s`
 - The C wrapper exists because `whisper_full_params` is a large C struct passed by value — we delegate the complex struct handling to C instead of defining fragile `MemoryLayout` in Java
-- **JAR bundling**: both `libwhisper.*` and `libwhisper_bridge.*` land in JAR as `/native/libwhisper.*` etc.
-- **Runtime loading**: `WhisperLib.java` uses `System.mapLibraryName()` to compute extensions, extracts from classpath (`/native/`) to a temp dir, loads `libwhisper` first then the bridge
+- **JAR bundling**: the gcc step additionally `cp`s `libwhisper.so` and `libggml*.so*` from the build dir into `src/main/resources/native/`, so all native deps land in the fat JAR
+- **Runtime loading**: `WhisperLib.java` uses `System.mapLibraryName()` to compute extensions, extracts from classpath (`native/`) to a temp dir, loads `libwhisper` first then the bridge
 - **Fat JAR**: maven-shade-plugin bundles Jackson and native libs into a single JAR
 
 ### FFmpeg (ProcessBuilder)

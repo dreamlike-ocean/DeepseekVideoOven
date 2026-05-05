@@ -41,18 +41,26 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-clean-plugin</artifactId>
                 <version>3.4.0</version>
-                <configuration>
-                    <filesets>
-                        <fileset>
-                            <directory>${native.res.dir}</directory>
-                            <includes>
-                                <include>*.so</include>
-                                <include>*.dylib</include>
-                                <include>*.dll</include>
-                            </includes>
-                        </fileset>
-                    </filesets>
-                </configuration>
+                <executions>
+                    <execution>
+                        <id>clean-native-libs</id>
+                        <phase>clean</phase>
+                        <goals><goal>clean</goal></goals>
+                        <configuration>
+                            <skip>${skip.native.build}</skip>
+                            <filesets>
+                                <fileset>
+                                    <directory>${native.res.dir}</directory>
+                                    <includes>
+                                        <include>*.so*</include>
+                                        <include>*.dylib*</include>
+                                        <include>*.dll</include>
+                                    </includes>
+                                </fileset>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>
@@ -103,6 +111,7 @@
                                 <argument>build</argument>
                                 <argument>-DBUILD_SHARED_LIBS=ON</argument>
                                 <argument>-DCMAKE_BUILD_TYPE=Release</argument>
+                                <argument>-DGGML_CUDA=ON</argument>
                             </arguments>
                             <skip>${skip.native.build}</skip>
                         </configuration>
@@ -117,6 +126,7 @@
                             <arguments>
                                 <argument>--build</argument><argument>build</argument>
                                 <argument>--config</argument><argument>Release</argument>
+                                <argument>-j</argument>
                             </arguments>
                             <skip>${skip.native.build}</skip>
                         </configuration>
@@ -130,7 +140,7 @@
                             <executable>sh</executable>
                             <arguments>
                                 <argument>-c</argument>
-                                <argument>mkdir -p ${native.res.dir} &amp;&amp; gcc -shared -fPIC -O3 -I${project.basedir}/whisper.cpp/include -I${project.basedir}/whisper.cpp/ggml/include -o ${native.res.dir}/libwhisper_bridge.so ${project.basedir}/native/whisper_bridge.c -L${project.basedir}/whisper.cpp/build/src -lwhisper -Wl,-rpath,\$ORIGIN</argument>
+                                <argument>mkdir -p ${native.res.dir} &amp;&amp; gcc -shared -fPIC -O3 -I${project.basedir}/whisper.cpp/include -I${project.basedir}/whisper.cpp/ggml/include -o ${native.res.dir}/libwhisper_bridge.so ${project.basedir}/native/whisper_bridge.c -L${project.basedir}/whisper.cpp/build/src -lwhisper -Wl,-rpath,\$ORIGIN &amp;&amp; cp ${project.basedir}/whisper.cpp/build/src/libwhisper.so ${project.basedir}/whisper.cpp/build/ggml/src/libggml.so.0 ${project.basedir}/whisper.cpp/build/ggml/src/libggml-base.so.0 ${project.basedir}/whisper.cpp/build/ggml/src/libggml-cpu.so.0 ${native.res.dir}/</argument>
                             </arguments>
                             <skip>${skip.native.build}</skip>
                         </configuration>
@@ -138,44 +148,6 @@
                 </executions>
             </plugin>
 
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.1.0</version>
-                <executions>
-                    <execution>
-                        <id>copy-whisper-lib</id>
-                        <phase>process-classes</phase>
-                        <goals><goal>run</goal></goals>
-                        <configuration>
-                            <skip>${skip.native.build}</skip>
-                            <target>
-                                <mkdir dir="${native.res.dir}"/>
-                                <copy todir="${native.res.dir}" failonerror="false" quiet="true">
-                                    <fileset dir="${project.basedir}/whisper.cpp/build">
-                                        <include name="*.dylib"/>
-                                        <include name="*.so"/>
-                                        <include name="*.dll"/>
-                                    </fileset>
-                                    <fileset dir="${project.basedir}/whisper.cpp/build/src">
-                                        <include name="*.dylib"/>
-                                        <include name="*.so"/>
-                                        <include name="*.dll"/>
-                                    </fileset>
-                                    <fileset dir="${project.basedir}/whisper.cpp/build/src/Release">
-                                        <include name="*.dll"/>
-                                    </fileset>
-                                    <fileset dir="${project.basedir}/whisper.cpp/build/ggml/src">
-                                        <include name="*.dylib"/>
-                                        <include name="*.so"/>
-                                        <include name="*.dll"/>
-                                    </fileset>
-                                </copy>
-                            </target>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
         </plugins>
     </build>
 

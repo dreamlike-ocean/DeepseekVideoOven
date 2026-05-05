@@ -9,9 +9,9 @@ public final class SpeechRecognizer {
 
     private SpeechRecognizer() {}
 
-    public static List<SubtitleSegment> transcribe(WhisperLib whisper, float[] audio) {
+    public static List<SubtitleSegment> transcribe(WhisperLib whisper, float[] audio, String language) {
         System.out.println("[2/5] Transcribing with whisper...");
-        var segments = whisper.transcribe(audio);
+        var segments = whisper.transcribe(audio, language);
         System.out.printf("  -> Recognized %d text segments%n", segments.size());
         return segments;
     }

@@ -1,5 +1,6 @@
 package io.github.dreamlike.deepseekvideooven.deepseek;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatRequest;
 import io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatResponse;
@@ -16,7 +17,8 @@ import java.util.List;
 public final class DeepSeekClient {
 
     private static final String BASE_URL = "https://api.deepseek.com";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private final HttpClient http;
     private final String apiKey;

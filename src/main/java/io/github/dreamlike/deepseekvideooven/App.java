@@ -47,11 +47,12 @@ public final class App {
 
         var modelPath = Path.of(resolved.whisperModelPath());
         var client = new DeepSeekClient(resolved.deepseekApiKey(), resolved.deepseekModel());
-        var pipeline = new PipelineOrchestrator(client, modelPath);
+        var pipeline = new PipelineOrchestrator(client, modelPath, resolved.defaultSourceLang());
 
         System.out.println("Input:  " + cli.input());
         System.out.println("Output: " + output);
         System.out.println("Model:  " + resolved.deepseekModel());
+        System.out.println("Lang:   " + resolved.defaultSourceLang());
         System.out.println("---");
 
         pipeline.process(cli.input(), output);
