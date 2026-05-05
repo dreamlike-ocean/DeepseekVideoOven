@@ -89,5 +89,9 @@ App.main() → PipelineOrchestrator.process()
 ## Native Image notes
 
 - Profile `native` activates `graalvm.buildtools:native-maven-plugin`
-- Requires `-H:+ForeignAPISupport` and `--enable-native-access=ALL-UNNAMED`
-- Reflection config at `src/main/resources/META-INF/native-image/reflect-config.json` covers Jackson DTOs
+- Requires `--enable-native-access=ALL-UNNAMED` (FFM restricted operations)
+- `-H:+ForeignAPISupport` is default in GraalVM 25, kept for explicitness
+- **Reachability metadata** at `src/main/resources/META-INF/native-image/reachability-metadata.json` covering:
+  - Reflection config for Jackson DTOs (6 records)
+  - Foreign downcalls config for 7 whisper functions (`whisper_init_from_file`, `whisper_bridge_transcribe`, `whisper_full_*`, `whisper_free`)
+- Key constraint: `WhisperLib`'s `static {}` calls `System.load()` and creates `MethodHandle`s at runtime — build-time initialization of this class is NOT possible. The downcall handles contain native function addresses that differ between build VM and native image runtime.

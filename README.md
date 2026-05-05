@@ -60,20 +60,29 @@ java -jar DeepseekVideoOven-1.0-SNAPSHOT.jar -i video.mp4
 # 克隆（含 submodule）
 git clone --recurse-submodules https://github.com/xxx/DeepseekVideoOven.git
 
-# 完整构建（含 C 库编译）
+# 完整构建（含 C 库编译）→ fat JAR
 mvn package
-# → target/DeepseekVideoOven-1.0-SNAPSHOT.jar（fat JAR，包含所有依赖和 native 库）
+# → target/DeepseekVideoOven-1.0-SNAPSHOT.jar
 
 # 仅改 Java 代码，跳过 C 编译
 mvn -Pdev compile
+
+# Native Image 编译（需要 GraalVM JDK 25+）→ 独立二进制
+mvn -Pnative package
+# → target/video-oven（单文件可执行，启动更快，无 JDK 依赖）
 ```
 
-需要 JDK 25+、cmake、gcc、NVIDIA CUDA Toolkit。
+- **JAR 模式**：需要 JDK 25+、cmake、gcc、NVIDIA CUDA Toolkit
+- **Native Image 模式**：额外需要 GraalVM 25+（`$JAVA_HOME` 指向 GraalVM），产物是独立二进制，无 JRE 依赖
 
 ## 使用
 
 ```bash
+# JAR 模式
 java -jar DeepseekVideoOven-1.0-SNAPSHOT.jar -i video.mp4
+
+# Native Image 模式（更快启动）
+./video-oven -i video.mp4
 ```
 
 | 参数 | 说明 | 默认值 |
