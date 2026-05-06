@@ -9,8 +9,10 @@ import io.github.dreamlike.deepseekvideooven.deepseek.dto.Message;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.List;
 
@@ -19,6 +21,7 @@ public final class DeepSeekClient {
     private static final String BASE_URL = "https://api.deepseek.com";
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    private static final int MAX_RETRIES = 3;
 
     private final HttpClient http;
     private final String apiKey;
@@ -51,18 +54,42 @@ public final class DeepSeekClient {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
 
-        var response = http.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        return sendWithRetry(httpRequest);
+    }
 
-        if (response.statusCode() != 200) {
-            throw new IOException("DeepSeek API error " + response.statusCode() + ": " + response.body());
+    private String sendWithRetry(HttpRequest request) throws IOException, InterruptedException {
+        IOException lastError = null;
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() == 200) {
+                    var chatResponse = MAPPER.readValue(response.body(), ChatResponse.class);
+                    if (chatResponse.choices() == null || chatResponse.choices().isEmpty()) {
+                        throw new IOException("Empty response from DeepSeek API");
+                    }
+                    return chatResponse.choices().getFirst().message().content();
+                }
+
+                if (response.statusCode() >= 500 || response.statusCode() == 429) {
+                    lastError = new IOException("DeepSeek API error " + response.statusCode());
+                } else {
+                    throw new IOException("DeepSeek API error " + response.statusCode() + ": " + response.body());
+                }
+
+            } catch (HttpTimeoutException e) {
+                lastError = new IOException("DeepSeek API timeout", e);
+            } catch (IOException e) {
+                if (attempt == MAX_RETRIES) throw e;
+                lastError = e;
+            }
+
+            if (attempt < MAX_RETRIES) {
+                long delayMs = (long) Math.pow(2, attempt) * 1000;
+                System.out.printf("  -> Retrying in %ds (attempt %d/%d)...%n", delayMs / 1000, attempt + 1, MAX_RETRIES);
+                Thread.sleep(delayMs);
+            }
         }
-
-        var chatResponse = MAPPER.readValue(response.body(), ChatResponse.class);
-
-        if (chatResponse.choices() == null || chatResponse.choices().isEmpty()) {
-            throw new IOException("Empty response from DeepSeek API");
-        }
-
-        return chatResponse.choices().getFirst().message().content();
+        throw lastError;
     }
 }

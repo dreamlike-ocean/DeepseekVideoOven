@@ -41,24 +41,54 @@ public final class App {
 
         var resolved = ToolDetector.resolve(config);
 
-        var output = cli.output() != null
+        var videoOutput = cli.output() != null
                 ? cli.output()
                 : replaceExtension(cli.input(), "_zh.mp4");
 
+        var assOutput = replaceExtension(videoOutput, ".ass");
+
+        var pipelineMode = switch (cli.mode()) {
+            case "burn" -> PipelineOrchestrator.Mode.BURN;
+            case "soft" -> PipelineOrchestrator.Mode.SOFT;
+            case "both" -> PipelineOrchestrator.Mode.BOTH;
+            case "transcript" -> PipelineOrchestrator.Mode.TRANSCRIPT;
+            default -> {
+                System.err.println("Error: unknown mode '" + cli.mode() + "', valid: burn, soft, both, transcript");
+                System.exit(1);
+                yield PipelineOrchestrator.Mode.BURN;
+            }
+        };
+
         var modelPath = Path.of(resolved.whisperModelPath());
         var client = new DeepSeekClient(resolved.deepseekApiKey(), resolved.deepseekModel());
-        var pipeline = new PipelineOrchestrator(client, modelPath, resolved.defaultSourceLang());
+        var pipeline = new PipelineOrchestrator(client, modelPath, resolved.defaultSourceLang(), pipelineMode);
 
         System.out.println("Input:  " + cli.input());
-        System.out.println("Output: " + output);
+        System.out.println("Mode:   " + cli.mode());
+        var isVideoOut = pipelineMode == PipelineOrchestrator.Mode.BURN || pipelineMode == PipelineOrchestrator.Mode.BOTH;
+        var isAssOut = pipelineMode != PipelineOrchestrator.Mode.BURN;
+        if (isVideoOut) {
+            System.out.println("Video:  " + videoOutput);
+        }
+        if (isVideoOut) {
+            System.out.println("Video:  " + videoOutput);
+        }
+        if (isAssOut) {
+            System.out.println("Ass:    " + assOutput);
+        }
         System.out.println("Model:  " + resolved.deepseekModel());
         System.out.println("Lang:   " + resolved.defaultSourceLang());
         System.out.println("---");
 
-        pipeline.process(cli.input(), output);
+        pipeline.process(cli.input(), videoOutput, assOutput);
 
         System.out.println("---");
-        System.out.println("Done: " + output.toAbsolutePath());
+        if (isVideoOut) {
+            System.out.println("Done: " + videoOutput.toAbsolutePath());
+        }
+        if (isAssOut) {
+            System.out.println("Done: " + assOutput.toAbsolutePath());
+        }
     }
 
     record CliArgs(
@@ -68,6 +98,7 @@ public final class App {
             String lang,
             String model,
             String apiKey,
+            String mode,
             boolean help
     ) {}
 
@@ -78,6 +109,7 @@ public final class App {
         String lang = null;
         String model = null;
         String apiKey = null;
+        String mode = "burn";
         boolean help = false;
 
         for (int i = 0; i < args.length; i++) {
@@ -88,6 +120,7 @@ public final class App {
                 case "-l", "--lang" -> lang = args[++i];
                 case "-m", "--model" -> model = args[++i];
                 case "-k", "--api-key" -> apiKey = args[++i];
+                case "--mode" -> mode = args[++i];
                 case "-h", "--help" -> help = true;
                 default -> {
                     System.err.println("Unknown option: " + args[i]);
@@ -95,7 +128,7 @@ public final class App {
                 }
             }
         }
-        return new CliArgs(input, output, configPath, lang, model, apiKey, help);
+        return new CliArgs(input, output, configPath, lang, model, apiKey, mode, help);
     }
 
     private static OvenConfig mergeCli(OvenConfig config, CliArgs cli) {
@@ -128,6 +161,11 @@ public final class App {
                   -l, --lang <code>      Source language hint (en/ja/ko/auto)
                   -m, --model <name>     DeepSeek model (default: deepseek-v4-pro)
                   -k, --api-key <key>    DeepSeek API key (overrides config)
+                  --mode <mode>          burn (default) | soft | both | transcript
+                                         burn = hard-coded video
+                                         soft = .ass subtitle file
+                                         both = video + .ass
+                                         transcript = .ass + .txt text transcript
                   -h, --help             Show this help
 
                 Config (./config.json):
