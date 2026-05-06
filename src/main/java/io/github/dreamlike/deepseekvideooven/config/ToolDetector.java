@@ -14,7 +14,8 @@ public final class ToolDetector {
             String whisperModelPath,
             String deepseekApiKey,
             String deepseekModel,
-            String defaultSourceLang
+            String defaultSourceLang,
+            String extraTranslationPrompt
     ) {}
 
     public static ResolvedConfig resolve(OvenConfig config) {
@@ -40,7 +41,8 @@ public final class ToolDetector {
                 ffmpegPath, modelPath,
                 config.deepseekApiKey(),
                 config.deepseekModel(),
-                config.defaultSourceLang()
+                config.defaultSourceLang(),
+                config.extraTranslationPrompt()
         );
     }
 

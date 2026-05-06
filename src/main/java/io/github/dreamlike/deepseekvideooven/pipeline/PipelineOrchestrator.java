@@ -16,12 +16,20 @@ public final class PipelineOrchestrator {
     private final DeepSeekClient client;
     private final Path modelPath;
     private final String sourceLanguage;
+    private final String extraTranslationPrompt;
     private final Mode mode;
 
-    public PipelineOrchestrator(DeepSeekClient client, Path modelPath, String sourceLanguage, Mode mode) {
+    public PipelineOrchestrator(
+            DeepSeekClient client,
+            Path modelPath,
+            String sourceLanguage,
+            String extraTranslationPrompt,
+            Mode mode
+    ) {
         this.client = client;
         this.modelPath = modelPath;
         this.sourceLanguage = sourceLanguage;
+        this.extraTranslationPrompt = extraTranslationPrompt;
         this.mode = mode;
     }
 
@@ -29,29 +37,45 @@ public final class PipelineOrchestrator {
         var workDir = Files.createTempDirectory("video-oven-");
         try {
             try (var whisper = WhisperLib.load(modelPath)) {
+                long stageStart = System.nanoTime();
                 var audio = AudioExtractor.extract(input);
+                printStageElapsed(stageStart);
+
+                stageStart = System.nanoTime();
                 var segments = SpeechRecognizer.transcribe(whisper, audio, sourceLanguage);
+                printStageElapsed(stageStart);
 
                 if (segments.isEmpty()) {
-                    System.out.println("No speech detected in video.");
+                    System.out.println("未检测到语音内容。");
                     return;
                 }
 
-                var translator = new Translator(client);
+                stageStart = System.nanoTime();
+                var translator = new Translator(client, extraTranslationPrompt);
                 var translated = translator.translate(segments);
+                var cleaned = SegmentCleaner.clean(translated);
+                var transcriptSegments = mode == Mode.TRANSCRIPT
+                        ? SegmentCleaner.cleanForTranscript(translated)
+                        : cleaned;
+                printStageElapsed(stageStart);
 
+                stageStart = System.nanoTime();
                 var assFile = workDir.resolve("subtitles.ass");
-                SubtitleGenerator.generate(translated, assFile);
+                SubtitleGenerator.generate(cleaned, assFile);
 
                 if (mode == Mode.SOFT || mode == Mode.BOTH || mode == Mode.TRANSCRIPT) {
                     Files.copy(assFile, assOutput);
                 }
                 if (mode == Mode.TRANSCRIPT) {
-                    writeTranscript(translated, assOutput.resolveSibling(
+                    writeTranscript(transcriptSegments, assOutput.resolveSibling(
                             replaceExt(assOutput.getFileName().toString(), ".txt")));
                 }
+                printStageElapsed(stageStart);
+
                 if (mode == Mode.BURN || mode == Mode.BOTH) {
+                    stageStart = System.nanoTime();
                     VideoBurner.burn(input, assFile, videoOutput);
+                    printStageElapsed(stageStart);
                 }
             }
         } finally {
@@ -68,7 +92,12 @@ public final class PipelineOrchestrator {
             sb.append(seg.text()).append("\n\n");
         }
         Files.writeString(txtPath, sb.toString());
-        System.out.printf("  -> Written transcript: %s%n", txtPath);
+        System.out.printf("  -> 已写出文稿：%s%n", txtPath);
+    }
+
+    private static void printStageElapsed(long startedAtNanos) {
+        double seconds = (System.nanoTime() - startedAtNanos) / 1_000_000_000.0;
+        System.out.printf("  -> 耗时 %.2f 秒%n", seconds);
     }
 
     private static String format(long ms) {

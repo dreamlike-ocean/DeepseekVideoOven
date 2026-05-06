@@ -12,7 +12,7 @@ public final class SubtitleGenerator {
     private SubtitleGenerator() {}
 
     public static Path generate(List<SubtitleSegment> segments, Path outputPath) throws IOException {
-        System.out.println("[4/5] Generating ASS subtitles...");
+        System.out.println("[4/5] 生成 ASS 字幕...");
 
         var sb = new StringBuilder();
         sb.append("""
@@ -37,7 +37,7 @@ public final class SubtitleGenerator {
         }
 
         Files.writeString(outputPath, sb.toString());
-        System.out.printf("  -> Written %d subtitles to %s%n", segments.size(), outputPath);
+        System.out.printf("  -> 已写出 %d 条字幕到 %s%n", segments.size(), outputPath);
         return outputPath;
     }
 }

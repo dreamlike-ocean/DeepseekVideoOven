@@ -8,6 +8,7 @@ int whisper_bridge_transcribe(
     int n_threads,
     const char *language
 ) {
+    const int subtitle_max_len = 48;
     struct whisper_full_params *params = whisper_full_default_params_by_ref(WHISPER_SAMPLING_GREEDY);
     if (!params) return -1;
 
@@ -16,6 +17,11 @@ int whisper_bridge_transcribe(
         params->language = language;
     }
     params->no_timestamps = false;
+    params->token_timestamps = true;
+    params->thold_pt = 0.01f;
+    params->thold_ptsum = 0.01f;
+    params->max_len = subtitle_max_len;
+    params->split_on_word = true;
     params->print_special = false;
     params->print_progress = false;
     params->print_realtime = false;

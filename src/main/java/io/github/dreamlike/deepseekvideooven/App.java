@@ -20,13 +20,13 @@ public final class App {
         }
 
         if (cli.input() == null) {
-            System.err.println("Error: -i/--input <file> is required");
+            System.err.println("错误：必须提供 -i/--input <file>");
             printHelp();
             System.exit(1);
         }
 
         if (!Files.exists(cli.input())) {
-            System.err.println("Error: input file not found: " + cli.input());
+            System.err.println("错误：输入文件不存在：" + cli.input());
             System.exit(1);
         }
 
@@ -34,18 +34,12 @@ public final class App {
         config = mergeCli(config, cli);
 
         if (config.deepseekApiKey() == null || config.deepseekApiKey().isBlank()) {
-            System.err.println("Error: DeepSeek API key not configured.");
-            System.err.println("  Set it in ./config.json or via DEEPSEEK_API_KEY env var.");
+            System.err.println("错误：未配置 DeepSeek API Key。");
+            System.err.println("  请在 ./config.json 中设置，或通过 DEEPSEEK_API_KEY 环境变量传入。");
             System.exit(1);
         }
 
         var resolved = ToolDetector.resolve(config);
-
-        var videoOutput = cli.output() != null
-                ? cli.output()
-                : replaceExtension(cli.input(), "_zh.mp4");
-
-        var assOutput = replaceExtension(videoOutput, ".ass");
 
         var pipelineMode = switch (cli.mode()) {
             case "burn" -> PipelineOrchestrator.Mode.BURN;
@@ -53,41 +47,52 @@ public final class App {
             case "both" -> PipelineOrchestrator.Mode.BOTH;
             case "transcript" -> PipelineOrchestrator.Mode.TRANSCRIPT;
             default -> {
-                System.err.println("Error: unknown mode '" + cli.mode() + "', valid: burn, soft, both, transcript");
+                System.err.println("错误：未知模式 '" + cli.mode() + "'，可选值为：burn、soft、both、transcript");
                 System.exit(1);
                 yield PipelineOrchestrator.Mode.BURN;
             }
         };
 
+        var videoOutput = cli.output() != null
+                ? cli.output()
+                : replaceExtension(cli.input(), "_zh.mp4");
+
+        var assOutput = cli.output() != null
+                ? replaceExtension(cli.output(), ".ass")
+                : defaultAssOutput(cli.input(), videoOutput, pipelineMode);
+
         var modelPath = Path.of(resolved.whisperModelPath());
         var client = new DeepSeekClient(resolved.deepseekApiKey(), resolved.deepseekModel());
-        var pipeline = new PipelineOrchestrator(client, modelPath, resolved.defaultSourceLang(), pipelineMode);
+        var pipeline = new PipelineOrchestrator(
+                client,
+                modelPath,
+                resolved.defaultSourceLang(),
+                resolved.extraTranslationPrompt(),
+                pipelineMode
+        );
 
-        System.out.println("Input:  " + cli.input());
-        System.out.println("Mode:   " + cli.mode());
+        System.out.println("输入文件： " + cli.input());
+        System.out.println("运行模式： " + cli.mode());
         var isVideoOut = pipelineMode == PipelineOrchestrator.Mode.BURN || pipelineMode == PipelineOrchestrator.Mode.BOTH;
         var isAssOut = pipelineMode != PipelineOrchestrator.Mode.BURN;
         if (isVideoOut) {
-            System.out.println("Video:  " + videoOutput);
-        }
-        if (isVideoOut) {
-            System.out.println("Video:  " + videoOutput);
+            System.out.println("输出视频： " + videoOutput);
         }
         if (isAssOut) {
-            System.out.println("Ass:    " + assOutput);
+            System.out.println("字幕文件： " + assOutput);
         }
-        System.out.println("Model:  " + resolved.deepseekModel());
-        System.out.println("Lang:   " + resolved.defaultSourceLang());
+        System.out.println("翻译模型： " + resolved.deepseekModel());
+        System.out.println("源语言：   " + resolved.defaultSourceLang());
         System.out.println("---");
 
         pipeline.process(cli.input(), videoOutput, assOutput);
 
         System.out.println("---");
         if (isVideoOut) {
-            System.out.println("Done: " + videoOutput.toAbsolutePath());
+            System.out.println("完成： " + videoOutput.toAbsolutePath());
         }
         if (isAssOut) {
-            System.out.println("Done: " + assOutput.toAbsolutePath());
+            System.out.println("完成： " + assOutput.toAbsolutePath());
         }
     }
 
@@ -123,7 +128,7 @@ public final class App {
                 case "--mode" -> mode = args[++i];
                 case "-h", "--help" -> help = true;
                 default -> {
-                    System.err.println("Unknown option: " + args[i]);
+                    System.err.println("未知参数：" + args[i]);
                     help = true;
                 }
             }
@@ -137,7 +142,8 @@ public final class App {
                 config.whisperModelPath(),
                 cli.apiKey != null ? cli.apiKey : config.deepseekApiKey(),
                 cli.model != null ? cli.model : config.deepseekModel(),
-                cli.lang != null ? cli.lang : config.defaultSourceLang()
+                cli.lang != null ? cli.lang : config.defaultSourceLang(),
+                config.extraTranslationPrompt()
         );
     }
 
@@ -148,41 +154,49 @@ public final class App {
         return path.resolveSibling(base + suffix);
     }
 
+    private static Path defaultAssOutput(Path input, Path videoOutput, PipelineOrchestrator.Mode mode) {
+        return switch (mode) {
+            case SOFT, TRANSCRIPT -> replaceExtension(input, ".zh.ass");
+            case BURN, BOTH -> replaceExtension(videoOutput, ".ass");
+        };
+    }
+
     private static void printHelp() {
         System.out.println("""
-                DeepseekVideoOven — Burn Chinese subtitles into any video using DeepSeek API
-                                
-                Usage: video-oven -i <input> [options]
-                                
-                Options:
-                  -i, --input <file>     Input video file (required)
-                  -o, --output <file>    Output video file (default: input_zh.mp4)
-                  -c, --config <file>    Config file path (default: ./config.json)
-                  -l, --lang <code>      Source language hint (en/ja/ko/auto)
-                  -m, --model <name>     DeepSeek model (default: deepseek-v4-pro)
-                  -k, --api-key <key>    DeepSeek API key (overrides config)
-                  --mode <mode>          burn (default) | soft | both | transcript
-                                         burn = hard-coded video
-                                         soft = .ass subtitle file
-                                         both = video + .ass
-                                         transcript = .ass + .txt text transcript
-                  -h, --help             Show this help
+                DeepseekVideoOven —— 使用 DeepSeek API 为任意视频生成中文字幕
 
-                Config (./config.json):
+                用法：video-oven -i <input> [options]
+
+                参数：
+                  -i, --input <file>     输入视频文件（必填）
+                  -o, --output <file>    输出视频文件（默认：input_zh.mp4）
+                  -c, --config <file>    配置文件路径（默认：./config.json）
+                  -l, --lang <code>      源语言提示（en/ja/ko/auto）
+                  -m, --model <name>     DeepSeek 模型（默认：deepseek-v4-pro）
+                  -k, --api-key <key>    DeepSeek API Key（优先级高于配置文件）
+                  --mode <mode>          burn（默认） | soft | both | transcript
+                                         burn = 输出硬字幕视频
+                                         soft = 仅输出 .ass 字幕文件
+                                         both = 同时输出视频和 .ass
+                                         transcript = 输出 .ass 和 .txt 文稿
+                  -h, --help             显示帮助
+
+                配置文件（./config.json）：
                   {
                     "ffmpegPath": "",
                     "whisperModelPath": "~/.video-oven/models/ggml-small.bin",
                     "deepseekApiKey": "sk-xxx",
                     "deepseekModel": "deepseek-v4-pro",
-                    "defaultSourceLang": "auto"
+                    "defaultSourceLang": "auto",
+                    "extraTranslationPrompt": "术语约定：如果出现 EmployeeId 保留原文；歌名保留原文并在必要时补中文括注。"
                   }
-                  (ffmpegPath and whisperModelPath are optional — auto-detected if omitted)
-                                
-                Prerequisites:
+                  （ffmpegPath 和 whisperModelPath 可省略，程序会自动探测）
+
+                运行前准备：
                   - ffmpeg (https://ffmpeg.org/download.html)
-                  - Whisper model: ggml-*.bin in ./models/ or ~/.video-oven/models/
-                    Download: https://huggingface.co/ggerganov/whisper.cpp/tree/main
-                  - DeepSeek API key (https://platform.deepseek.com/api_keys)
+                  - Whisper 模型：将 ggml-*.bin 放到 ./models/ 或 ~/.video-oven/models/
+                    下载地址：https://huggingface.co/ggerganov/whisper.cpp/tree/main
+                  - DeepSeek API Key：https://platform.deepseek.com/api_keys
                 """);
     }
 }

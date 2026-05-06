@@ -7,7 +7,8 @@ public record OvenConfig(
         @JsonProperty("whisperModelPath") String whisperModelPath,
         @JsonProperty("deepseekApiKey") String deepseekApiKey,
         @JsonProperty("deepseekModel") String deepseekModel,
-        @JsonProperty("defaultSourceLang") String defaultSourceLang
+        @JsonProperty("defaultSourceLang") String defaultSourceLang,
+        @JsonProperty("extraTranslationPrompt") String extraTranslationPrompt
 ) {
     public OvenConfig {
         if (deepseekModel == null || deepseekModel.isBlank()) {
@@ -15,6 +16,9 @@ public record OvenConfig(
         }
         if (defaultSourceLang == null || defaultSourceLang.isBlank()) {
             defaultSourceLang = "auto";
+        }
+        if (extraTranslationPrompt != null && extraTranslationPrompt.isBlank()) {
+            extraTranslationPrompt = null;
         }
     }
 }

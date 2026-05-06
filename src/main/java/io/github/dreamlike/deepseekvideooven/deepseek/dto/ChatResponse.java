@@ -17,7 +17,8 @@ public record ChatResponse(
 
     public record Message(
             String role,
-            String content
+            String content,
+            @JsonProperty("reasoning_content") String reasoningContent
     ) {}
 
     public record Usage(

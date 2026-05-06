@@ -9,7 +9,8 @@ public record ChatRequest(
         List<Message> messages,
         Double temperature,
         @JsonProperty("max_tokens") Integer maxTokens,
-        Boolean stream
+        Boolean stream,
+        Thinking thinking
 ) {
     public static Builder builder() {
         return new Builder();
@@ -21,12 +22,20 @@ public record ChatRequest(
         private Double temperature = 0.3;
         private Integer maxTokens = 4096;
         private Boolean stream = false;
+        private Thinking thinking = Thinking.disabled();
 
         public Builder model(String v) { model = v; return this; }
         public Builder messages(List<Message> v) { messages = v; return this; }
         public Builder temperature(Double v) { temperature = v; return this; }
         public Builder maxTokens(Integer v) { maxTokens = v; return this; }
         public Builder stream(Boolean v) { stream = v; return this; }
-        public ChatRequest build() { return new ChatRequest(model, messages, temperature, maxTokens, stream); }
+        public Builder thinking(Thinking v) { thinking = v; return this; }
+        public ChatRequest build() { return new ChatRequest(model, messages, temperature, maxTokens, stream, thinking); }
+    }
+
+    public record Thinking(String type) {
+        public static Thinking disabled() {
+            return new Thinking("disabled");
+        }
     }
 }
