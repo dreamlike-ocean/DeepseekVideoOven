@@ -13,9 +13,12 @@
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <native.res.dir>${project.basedir}/src/main/resources/native</native.res.dir>
+        <native.build.dir>${project.build.directory}/native-build</native.build.dir>
         <jackson.version>2.18.2</jackson.version>
         <main.class>io.github.dreamlike.deepseekvideooven.App</main.class>
         <skip.native.build>false</skip.native.build>
+        <video.oven.cuda>AUTO</video.oven.cuda>
+        <video.oven.metal>AUTO</video.oven.metal>
     </properties>
 
     <dependencies>
@@ -55,6 +58,7 @@
                                         <include>*.so*</include>
                                         <include>*.dylib*</include>
                                         <include>*.dll</include>
+                                        <include>libs.txt</include>
                                     </includes>
                                 </fileset>
                             </filesets>
@@ -95,8 +99,9 @@
                             <executable>sh</executable>
                             <arguments>
                                 <argument>-c</argument>
-                                <argument>test -d ${project.basedir}/whisper.cpp/build &amp;&amp; cmake --build ${project.basedir}/whisper.cpp/build --target clean || true</argument>
+                                <argument>test -d ${native.build.dir} &amp;&amp; cmake --build ${native.build.dir} --target clean || true</argument>
                             </arguments>
+                            <skip>${skip.native.build}</skip>
                         </configuration>
                     </execution>
                     <execution>
@@ -105,13 +110,16 @@
                         <goals><goal>exec</goal></goals>
                         <configuration>
                             <executable>cmake</executable>
-                            <workingDirectory>${project.basedir}/whisper.cpp</workingDirectory>
+                            <workingDirectory>${project.basedir}</workingDirectory>
                             <arguments>
+                                <argument>-S</argument>
+                                <argument>native</argument>
                                 <argument>-B</argument>
-                                <argument>build</argument>
-                                <argument>-DBUILD_SHARED_LIBS=ON</argument>
+                                <argument>${native.build.dir}</argument>
                                 <argument>-DCMAKE_BUILD_TYPE=Release</argument>
-                                <argument>-DGGML_CUDA=ON</argument>
+                                <argument>-DVIDEO_OVEN_NATIVE_DIR=${native.res.dir}</argument>
+                                <argument>-DVIDEO_OVEN_CUDA=${video.oven.cuda}</argument>
+                                <argument>-DVIDEO_OVEN_METAL=${video.oven.metal}</argument>
                             </arguments>
                             <skip>${skip.native.build}</skip>
                         </configuration>
@@ -122,25 +130,12 @@
                         <goals><goal>exec</goal></goals>
                         <configuration>
                             <executable>cmake</executable>
-                            <workingDirectory>${project.basedir}/whisper.cpp</workingDirectory>
+                            <workingDirectory>${project.basedir}</workingDirectory>
                             <arguments>
-                                <argument>--build</argument><argument>build</argument>
+                                <argument>--build</argument><argument>${native.build.dir}</argument>
                                 <argument>--config</argument><argument>Release</argument>
+                                <argument>--target</argument><argument>video_oven_native_bundle</argument>
                                 <argument>-j</argument>
-                            </arguments>
-                            <skip>${skip.native.build}</skip>
-                        </configuration>
-                    </execution>
-
-                    <execution>
-                        <id>build-whisper-bridge</id>
-                        <phase>generate-sources</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <executable>sh</executable>
-                            <arguments>
-                                <argument>-c</argument>
-                                <argument>mkdir -p ${native.res.dir} &amp;&amp; gcc -shared -fPIC -O3 -I${project.basedir}/whisper.cpp/include -I${project.basedir}/whisper.cpp/ggml/include -o ${native.res.dir}/libwhisper_bridge.so ${project.basedir}/native/whisper_bridge.c -L${project.basedir}/whisper.cpp/build/src -lwhisper -Wl,-rpath,\$ORIGIN &amp;&amp; cp ${project.basedir}/whisper.cpp/build/src/libwhisper.so ${project.basedir}/whisper.cpp/build/ggml/src/libggml.so.0 ${project.basedir}/whisper.cpp/build/ggml/src/libggml-base.so.0 ${project.basedir}/whisper.cpp/build/ggml/src/libggml-cpu.so.0 ${native.res.dir}/</argument>
                             </arguments>
                             <skip>${skip.native.build}</skip>
                         </configuration>

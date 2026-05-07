@@ -12,30 +12,35 @@ mvn -Pdev compile
 
 # Full build with native C libs (normal JVM JAR)
 mvn package
+# Optional native backend policy:
+#   -Dvideo.oven.cuda=AUTO|ON|OFF   (AUTO enables CUDA only on Linux when CUDA Toolkit + nvcc are found)
+#   -Dvideo.oven.metal=AUTO|ON|OFF  (AUTO enables Metal on macOS)
 
 # Native Image binary (requires GraalVM JDK)
 mvn -Pnative package
 # output: target/video-oven
 ```
 
-Use `mvn -Pdev ...` or `-Dskip.native.build=true` for Java-only changes. Building the native C libs requires `cmake`, `gcc` installed.
+Use `mvn -Pdev ...` or `-Dskip.native.build=true` for Java-only changes. Building the native C libs requires `cmake` and a C/C++ compiler.
 
-**Important:** `mvn clean` deletes `target/`, runs `cmake --build whisper.cpp/build --target clean` (keeping cmake cache), and deletes `src/main/resources/native/*.{so,dylib,dll}`. Do NOT run `mvn clean -Pdev` — it wipes the native libs without rebuilding them. After a full `mvn package`, subsequent `mvn -Pdev compile` reuses the existing libs in `src/main/resources/native/`.
+**Important:** `mvn clean` deletes `target/` and removes bundled native resources from `src/main/resources/native/`. `mvn clean -Pdev` skips native resource cleanup and only deletes `target/`. After a full `mvn package`, subsequent `mvn -Pdev compile` reuses the existing libs in `src/main/resources/native/`.
+
+Supported platforms are Linux and macOS. Windows may work incidentally but is not a correctness target.
 
 ## Architecture
 
 ### Native layer (C → FFM API bridging)
 
 ```
-native/whisper_bridge.c  →  libwhisper (submodule)        output → src/main/resources/native/
+native/CMakeLists.txt → whisper.cpp + whisper_bridge.c    output → src/main/resources/native/
 ```
 
 - `whisper.cpp/` is a **git submodule** — clone with `--recurse-submodules`
-- C bridges are compiled during `generate-sources` phase directly into `src/main/resources/native/` so they're bundled in the JAR
-- Platform detection (`so`/`dylib`/`dll`) is done inline by the gcc shell command via `uname -s`
+- Native libraries are compiled during `generate-sources` through CMake into `target/native-build/`, then copied into `src/main/resources/native/` so they're bundled in the JAR
+- Backend policy is controlled by `native/CMakeLists.txt`: CUDA `AUTO` enables `GGML_CUDA` only on Linux when CUDA Toolkit and `nvcc` are found; Metal `AUTO` enables `GGML_METAL` on macOS
 - The C wrapper exists because `whisper_full_params` is a large C struct passed by value — we delegate the complex struct handling to C instead of defining fragile `MemoryLayout` in Java
-- **JAR bundling**: the gcc step additionally `cp`s `libwhisper.so` and `libggml*.so*` from the build dir into `src/main/resources/native/`, so all native deps land in the fat JAR
-- **Runtime loading**: `WhisperLib.java` uses `System.mapLibraryName()` to compute extensions, extracts from classpath (`native/`) to a temp dir, loads `libwhisper` first then the bridge
+- **JAR bundling**: the CMake `video_oven_native_bundle` target copies `libwhisper`, `libwhisper_bridge`, `libggml*`, and `native/libs.txt` into `src/main/resources/native/`
+- **Runtime loading**: `WhisperLib.java` reads `native/libs.txt`, extracts all bundled native libs to a temp dir, then loads ggml base/backends, `libwhisper`, and the bridge in dependency order
 - **Fat JAR**: maven-shade-plugin bundles Jackson and native libs into a single JAR
 
 ### FFmpeg (ProcessBuilder)
@@ -48,7 +53,7 @@ All FFmpeg operations use the `ffmpeg` CLI via `ProcessBuilder` — no C bridge 
 
 **FFmpegBridge.java** — static-only utility. Calls `ffmpeg` CLI via `ProcessBuilder`, reads stdout for audio samples. No FFM/JNI dependency.
 
-**WhisperLib.java** — instance-based (holds whisper_context pointer). `static {}` loads `libwhisper_bridge.dylib` and creates all `static final MethodHandle`s. The `load(Path modelPath)` factory creates an instance by calling `whisper_init_from_file`. `close()` calls `whisper_free`. Uses `Arena.ofConfined()` for native memory.
+**WhisperLib.java** — instance-based (holds whisper_context pointer). `static {}` loads the platform native libs and creates all `static final MethodHandle`s. The `load(Path modelPath)` factory creates an instance by calling `whisper_init_from_file`. `close()` calls `whisper_free`. Uses `Arena.ofConfined()` for native memory.
 
 ### Pipeline (5 steps)
 
@@ -84,7 +89,7 @@ App.main() → PipelineOrchestrator.process()
    ```json
    { "deepseekApiKey": "sk-xxx" }
    ```
-4. Native whisper library built: `mvn package` (or `-Pdev` if lib already exists in `target/native-libs/`)
+4. Native whisper library built: `mvn package` (or `-Pdev` if lib already exists in `src/main/resources/native/`)
 
 ## Native Image notes
 
