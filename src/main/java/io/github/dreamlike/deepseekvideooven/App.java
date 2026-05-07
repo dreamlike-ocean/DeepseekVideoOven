@@ -211,7 +211,7 @@ public final class App {
                                          burn = 输出硬字幕视频
                                          soft = 仅输出字幕文件
                                          both = 同时输出视频和字幕
-                                         transcript = 输出字幕和 .txt 文稿
+                                         transcript = 输出字幕、中文 .txt 文稿和原始 .orig.txt 文稿
                   -h, --help             显示帮助
 
                 配置文件（./config.json）：

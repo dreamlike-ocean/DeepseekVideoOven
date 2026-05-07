@@ -81,8 +81,12 @@ public final class PipelineOrchestrator {
                 }
 
                 if (mode == Mode.TRANSCRIPT) {
-                    writeTranscript(transcriptSegments, subtitleOutput.resolveSibling(
-                            replaceExt(subtitleOutput.getFileName().toString(), ".txt")));
+                    var translatedTranscriptPath = subtitleOutput.resolveSibling(
+                            replaceExt(subtitleOutput.getFileName().toString(), ".txt"));
+                    var originalTranscriptPath = subtitleOutput.resolveSibling(
+                            replaceExt(subtitleOutput.getFileName().toString(), ".orig.txt"));
+                    writeTranscript(transcriptSegments, translatedTranscriptPath, "已写出中文文稿");
+                    writeTranscript(segments, originalTranscriptPath, "已写出原始文稿");
                 }
                 printStageElapsed(stageStart);
 
@@ -90,6 +94,9 @@ public final class PipelineOrchestrator {
                     stageStart = System.nanoTime();
                     VideoBurner.burn(input, assFile, videoOutput);
                     printStageElapsed(stageStart);
+                } else {
+                    System.out.println("[5/5] 跳过烧录字幕到视频...");
+                    System.out.println("  -> 当前模式不包含视频烧录。");
                 }
             }
         } finally {
@@ -99,14 +106,14 @@ public final class PipelineOrchestrator {
         }
     }
 
-    private static void writeTranscript(List<SubtitleSegment> segments, Path txtPath) throws IOException {
+    private static void writeTranscript(List<SubtitleSegment> segments, Path txtPath, String label) throws IOException {
         var sb = new StringBuilder();
         for (var seg : segments) {
             sb.append("[").append(format(seg.t0Ms())).append(" -> ").append(format(seg.t1Ms())).append("]\n");
             sb.append(seg.text()).append("\n\n");
         }
         Files.writeString(txtPath, sb.toString());
-        System.out.printf("  -> 已写出文稿：%s%n", txtPath);
+        System.out.printf("  -> %s：%s%n", label, txtPath);
     }
 
     private static void printStageElapsed(long startedAtNanos) {

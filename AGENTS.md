@@ -80,6 +80,7 @@ App.main() → PipelineOrchestrator.process()
 - **All FFM calls use `invokeExact`** — avoids boxing overhead
 - **Java records** used for DTOs and models throughout
 - **No external CLI framework** — argument parsing in `App.parseArgs()` is a simple switch-case
+- **Keep default translation prompts generic** — do not encode sample-specific fixes, examples, or one-off terminology corrections into code. Put case-specific translation guidance in user config such as `extraTranslationPrompt`.
 
 ## Prerequisites for running
 

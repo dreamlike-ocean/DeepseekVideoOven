@@ -26,15 +26,17 @@ public final class Translator {
             3. Do not merge segments, do not omit segments, and do not add any extra commentary
             4. Many input segments are cut mid-phrase by ASR. Keep the original segmentation. Do not move words or meaning from one marker to another.
             5. If a segment is only a fragment, translate it as a fragment. Do not complete it with words from the next segment.
-            6. Every output line must be non-empty.
-            7. Preserve names, titles, identifiers, commands, code symbols, speaker labels, and recurring terms accurately.
-            8. Keep tokens unchanged only when they clearly look like code or structured identifiers, such as camelCase, PascalCase used as names, snake_case, ALL_CAPS constants, dotted names, function calls, generic type syntax, code literals, or exact API/package/class names.
-            9. Do not keep an English word unchanged merely because it is capitalized at the start of a sentence or segment. Ordinary words should still be translated naturally.
-            10. When an identifier appears inside an otherwise natural sentence, translate only the surrounding words and keep the identifier itself unchanged.
-            11. If the same identifier appears elsewhere in a clearer original form, keep that canonical identifier form consistent across the batch even if ASR introduces lowercase, spacing, or minor formatting variation.
-            12. If you are unsure whether a token is an identifier, prefer natural translation unless it has strong code-like signals such as internal capitalization, digits, underscores, dots, parentheses, or repeated exact identifier use in the batch.
-            13. Choose the meaning that best fits the local context. Avoid stiff, overly literal, or dictionary-style wording.
-            14. Keep translations consistent within the batch.
+            6. Do not anticipate or borrow content from a later marker even if that would make the current Chinese line sound smoother.
+            7. If a phrase starts in one marker and finishes in the next marker, keep that split. The earlier line may stay incomplete.
+            8. Every output line must be non-empty.
+            9. Preserve names, titles, identifiers, commands, code symbols, speaker labels, and recurring terms accurately.
+            10. Keep tokens unchanged only when they clearly look like code or structured identifiers, such as camelCase, PascalCase used as names, snake_case, ALL_CAPS constants, dotted names, function calls, generic type syntax, code literals, or exact API/package/class names.
+            11. Do not keep an English word unchanged merely because it is capitalized at the start of a sentence or segment. Ordinary words should still be translated naturally.
+            12. When an identifier appears inside an otherwise natural sentence, translate only the surrounding words and keep the identifier itself unchanged.
+            13. If the same identifier appears elsewhere in a clearer original form, keep that canonical identifier form consistent across the batch even if ASR introduces lowercase, spacing, or minor formatting variation.
+            14. If you are unsure whether a token is an identifier, prefer natural translation unless it has strong code-like signals such as internal capitalization, digits, underscores, dots, parentheses, or repeated exact identifier use in the batch.
+            15. Choose the meaning that best fits the local context. Avoid stiff, overly literal, or dictionary-style wording.
+            16. Keep translations consistent within the batch.
             """;
 
     private final DeepSeekClient client;
@@ -168,6 +170,7 @@ public final class Translator {
         sb.append("Correct output:\n");
         sb.append("[[SEG-0001]] 灵活\n");
         sb.append("[[SEG-0002]] 构造体作为最终定稿的功能首次亮相\n\n");
+        sb.append("When a phrase continues in the next marker, keep the current line as a fragment instead of completing it early.\n\n");
         sb.append("Identifier preservation example:\n");
         sb.append("[[SEG-0001]] fieldName is null\n");
         sb.append("[[SEG-0002]] call validateAge(userAge) before super\n");
