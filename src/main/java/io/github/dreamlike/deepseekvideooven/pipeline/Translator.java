@@ -6,10 +6,17 @@ import io.github.dreamlike.deepseekvideooven.model.SubtitleSegment;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class Translator {
 
     private static final int BATCH_SIZE = 20;
+    private static final int MAX_CONCURRENT_BATCHES = 10;
     private static final String SEGMENT_PREFIX = "[[SEG-";
     private static final String SYSTEM_PROMPT = """
             You are a professional subtitle translator. Translate the following subtitle segments into concise, natural Chinese.
@@ -45,19 +52,69 @@ public final class Translator {
         }
 
         var batches = buildBatches(segments);
+        var results = new BatchTranslation[batches.size()];
+        var completedSegments = new AtomicInteger();
+
+        try (var executor = Executors.newFixedThreadPool(MAX_CONCURRENT_BATCHES, Thread.ofVirtual().name("translator-", 0).factory())) {
+            var futures = new ArrayList<CompletableFuture<BatchTranslation>>(batches.size());
+
+            for (var batch : batches) {
+                futures.add(CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return translateBatch(batch, segments.size(), batches.size(), completedSegments);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new CompletionException(e);
+                    } catch (IOException e) {
+                        throw new CompletionException(e);
+                    }
+                }, executor));
+            }
+
+            var firstFailure = new AtomicReference<Throwable>();
+            var futureArray = futures.toArray(new CompletableFuture<?>[0]);
+            for (var future : futureArray) {
+                future.whenComplete((ignored, throwable) -> {
+                    var cause = unwrapFutureFailure(throwable);
+                    if (cause == null) {
+                        return;
+                    }
+                    if (firstFailure.compareAndSet(null, cause)) {
+                        for (var other : futureArray) {
+                            if (other != future) {
+                                other.cancel(true);
+                            }
+                        }
+                        executor.shutdownNow();
+                    }
+                });
+            }
+
+            CompletableFuture.allOf(futureArray)
+                    .exceptionally(ignored -> null)
+                    .join();
+
+            var failure = firstFailure.get();
+            if (failure != null) {
+                rethrowTaskFailure(failure);
+            }
+
+            for (var future : futures) {
+                var completed = future.join();
+                results[completed.batchIndex()] = completed;
+            }
+        }
+
         var translated = new ArrayList<SubtitleSegment>(segments.size());
-        int completedSegments = 0;
-
-        for (var batch : batches) {
-            var translatedBatch = translateBatch(batch, segments.size(), batches.size(), completedSegments);
-            completedSegments += batch.segments().size();
-
+        for (var translatedBatch : results) {
+            if (translatedBatch == null) {
+                throw new IOException("并行翻译未返回完整结果。");
+            }
             for (int j = 0; j < translatedBatch.translatedLines().size() && j < translatedBatch.segments().size(); j++) {
                 var orig = translatedBatch.segments().get(j);
                 translated.add(new SubtitleSegment(orig.t0Ms(), orig.t1Ms(), translatedBatch.translatedLines().get(j)));
             }
         }
-
         return translated;
     }
 
@@ -65,18 +122,19 @@ public final class Translator {
             BatchRequest batch,
             int totalSegments,
             int totalBatches,
-            int completedSegmentsBefore
+            AtomicInteger completedSegments
     ) throws IOException, InterruptedException {
         long startedAt = System.nanoTime();
         String batchLabel = "批次 %d/%d".formatted(batch.batchIndex() + 1, totalBatches);
-        var translated = translateSegments(batch.segments(), batchLabel);
+        var trace = new BatchTrace();
+        var translated = translateSegments(batch.segments(), batchLabel, trace);
         double seconds = (System.nanoTime() - startedAt) / 1_000_000_000.0;
-        int done = completedSegmentsBefore + batch.segments().size();
+        int done = completedSegments.addAndGet(batch.segments().size());
         System.out.printf(
-                "  -> 批次 %d/%d 完成：%d 行，耗时 %.2fs，tokens %d（输入 %d / 输出 %d），累计 %d/%d%n",
-                batch.batchIndex() + 1,
-                totalBatches,
+                "  -> %s 完成：%d 行（%s），总耗时 %.2fs，tokens %d（输入 %d / 输出 %d），累计 %d/%d%n",
+                batchLabel,
                 batch.segments().size(),
+                trace.formatSummary(),
                 seconds,
                 translated.totalTokens(),
                 translated.promptTokens(),
@@ -130,9 +188,13 @@ public final class Translator {
         return sb.toString();
     }
 
-    private TranslationResult translateSegments(List<SubtitleSegment> segments, String label) throws IOException, InterruptedException {
+    private TranslationResult translateSegments(List<SubtitleSegment> segments, String label, BatchTrace trace)
+            throws IOException, InterruptedException {
+        int subtaskIndex = trace.nextSubtaskIndex();
         var prompt = buildPrompt(segments);
+        long startedAt = System.nanoTime();
         var response = client.chat(buildSystemPrompt(), prompt);
+        trace.record(subtaskIndex, System.nanoTime() - startedAt);
 
         try {
             var lines = parseResponse(response.content(), segments.size());
@@ -145,7 +207,8 @@ public final class Translator {
         } catch (IllegalStateException e) {
             if (segments.size() <= 1) {
                 throw new IllegalStateException(
-                        label + " 解析失败：" + e.getMessage() + "；返回内容片段：" + previewResponse(response.content()),
+                        label + " 子任务 " + subtaskIndex + " 解析失败：" + e.getMessage()
+                                + "；返回内容片段：" + previewResponse(response.content()),
                         e
                 );
             }
@@ -154,16 +217,17 @@ public final class Translator {
             int leftSize = mid;
             int rightSize = segments.size() - mid;
             System.out.printf(
-                    "  -> %s 输出格式异常，拆分重试：%d -> %d + %d（返回内容片段：%s）%n",
+                    "  -> %s 子任务 %d 输出格式异常，拆分重试：%d -> %d + %d（返回内容片段：%s）%n",
                     label,
+                    subtaskIndex,
                     segments.size(),
                     leftSize,
                     rightSize,
                     previewResponse(response.content())
             );
 
-            var left = translateSegments(segments.subList(0, mid), label + ".1");
-            var right = translateSegments(segments.subList(mid, segments.size()), label + ".2");
+            var left = translateSegments(segments.subList(0, mid), label, trace);
+            var right = translateSegments(segments.subList(mid, segments.size()), label, trace);
 
             var mergedLines = new ArrayList<String>(segments.size());
             mergedLines.addAll(left.lines());
@@ -276,9 +340,67 @@ public final class Translator {
         return normalized.length() > 160 ? normalized.substring(0, 160) + "..." : normalized;
     }
 
+    private void rethrowTaskFailure(Throwable cause) throws IOException, InterruptedException {
+        if (cause instanceof InterruptedException e) {
+            throw e;
+        }
+        if (cause instanceof IOException e) {
+            throw e;
+        }
+        if (cause instanceof RuntimeException e) {
+            throw e;
+        }
+        if (cause instanceof Error e) {
+            throw e;
+        }
+        throw new IOException("并行翻译失败", cause);
+    }
+
+    private Throwable unwrapFutureFailure(Throwable throwable) {
+        if (throwable == null) {
+            return null;
+        }
+        while (throwable instanceof CompletionException e && e.getCause() != null) {
+            throwable = e.getCause();
+        }
+        if (throwable instanceof CancellationException) {
+            return null;
+        }
+        return throwable;
+    }
+
     private record BatchRequest(int batchIndex, List<SubtitleSegment> segments) {}
 
     private record BatchTranslation(int batchIndex, List<SubtitleSegment> segments, List<String> translatedLines) {}
 
     private record TranslationResult(List<String> lines, int promptTokens, int completionTokens, int totalTokens) {}
+
+    private static final class BatchTrace {
+        private final List<SubtaskTiming> timings = new ArrayList<>();
+        private int nextSubtaskIndex = 1;
+
+        int nextSubtaskIndex() {
+            return nextSubtaskIndex++;
+        }
+
+        void record(int subtaskIndex, long elapsedNanos) {
+            timings.add(new SubtaskTiming(subtaskIndex, elapsedNanos));
+        }
+
+        String formatSummary() {
+            var sb = new StringBuilder();
+            for (int i = 0; i < timings.size(); i++) {
+                var timing = timings.get(i);
+                if (i > 0) {
+                    sb.append("，");
+                }
+                sb.append("子任务").append(timing.subtaskIndex())
+                        .append(' ')
+                        .append("%.2fs".formatted(timing.elapsedNanos() / 1_000_000_000.0));
+            }
+            return sb.toString();
+        }
+    }
+
+    private record SubtaskTiming(int subtaskIndex, long elapsedNanos) {}
 }
