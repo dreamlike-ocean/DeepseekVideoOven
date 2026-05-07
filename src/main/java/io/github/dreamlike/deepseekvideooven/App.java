@@ -5,6 +5,7 @@ import io.github.dreamlike.deepseekvideooven.config.OvenConfig;
 import io.github.dreamlike.deepseekvideooven.config.ToolDetector;
 import io.github.dreamlike.deepseekvideooven.deepseek.DeepSeekClient;
 import io.github.dreamlike.deepseekvideooven.pipeline.PipelineOrchestrator;
+import io.github.dreamlike.deepseekvideooven.pipeline.SubtitleGenerator;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,13 +54,23 @@ public final class App {
             }
         };
 
+        var subtitleFormat = switch (cli.subtitleFormat()) {
+            case "ass" -> SubtitleGenerator.Format.ASS;
+            case "srt" -> SubtitleGenerator.Format.SRT;
+            default -> {
+                System.err.println("错误：未知字幕格式 '" + cli.subtitleFormat() + "'，可选值为：ass、srt");
+                System.exit(1);
+                yield SubtitleGenerator.Format.ASS;
+            }
+        };
+
         var videoOutput = cli.output() != null
                 ? cli.output()
                 : replaceExtension(cli.input(), "_zh.mp4");
 
-        var assOutput = cli.output() != null
-                ? replaceExtension(cli.output(), ".ass")
-                : defaultAssOutput(cli.input(), videoOutput, pipelineMode);
+        var subtitleOutput = cli.output() != null
+                ? replaceExtension(cli.output(), subtitleSuffix(subtitleFormat))
+                : defaultSubtitleOutput(cli.input(), videoOutput, pipelineMode, subtitleFormat);
 
         var modelPath = Path.of(resolved.whisperModelPath());
         var client = new DeepSeekClient(resolved.deepseekApiKey(), resolved.deepseekModel());
@@ -68,7 +79,8 @@ public final class App {
                 modelPath,
                 resolved.defaultSourceLang(),
                 resolved.extraTranslationPrompt(),
-                pipelineMode
+                pipelineMode,
+                subtitleFormat
         );
 
         System.out.println("输入文件： " + cli.input());
@@ -79,20 +91,24 @@ public final class App {
             System.out.println("输出视频： " + videoOutput);
         }
         if (isAssOut) {
-            System.out.println("字幕文件： " + assOutput);
+            System.out.println("字幕格式： " + cli.subtitleFormat());
+            System.out.println("字幕文件： " + subtitleOutput);
         }
         System.out.println("翻译模型： " + resolved.deepseekModel());
         System.out.println("源语言：   " + resolved.defaultSourceLang());
         System.out.println("---");
 
-        pipeline.process(cli.input(), videoOutput, assOutput);
+        long totalStartedAt = System.nanoTime();
+        pipeline.process(cli.input(), videoOutput, subtitleOutput);
+        double totalSeconds = (System.nanoTime() - totalStartedAt) / 1_000_000_000.0;
 
         System.out.println("---");
+        System.out.printf("总耗时： %.2f 秒%n", totalSeconds);
         if (isVideoOut) {
             System.out.println("完成： " + videoOutput.toAbsolutePath());
         }
         if (isAssOut) {
-            System.out.println("完成： " + assOutput.toAbsolutePath());
+            System.out.println("完成： " + subtitleOutput.toAbsolutePath());
         }
     }
 
@@ -104,6 +120,7 @@ public final class App {
             String model,
             String apiKey,
             String mode,
+            String subtitleFormat,
             boolean help
     ) {}
 
@@ -115,6 +132,7 @@ public final class App {
         String model = null;
         String apiKey = null;
         String mode = "burn";
+        String subtitleFormat = "ass";
         boolean help = false;
 
         for (int i = 0; i < args.length; i++) {
@@ -126,6 +144,7 @@ public final class App {
                 case "-m", "--model" -> model = args[++i];
                 case "-k", "--api-key" -> apiKey = args[++i];
                 case "--mode" -> mode = args[++i];
+                case "--subtitle-format" -> subtitleFormat = args[++i];
                 case "-h", "--help" -> help = true;
                 default -> {
                     System.err.println("未知参数：" + args[i]);
@@ -133,7 +152,7 @@ public final class App {
                 }
             }
         }
-        return new CliArgs(input, output, configPath, lang, model, apiKey, mode, help);
+        return new CliArgs(input, output, configPath, lang, model, apiKey, mode, subtitleFormat, help);
     }
 
     private static OvenConfig mergeCli(OvenConfig config, CliArgs cli) {
@@ -154,10 +173,23 @@ public final class App {
         return path.resolveSibling(base + suffix);
     }
 
-    private static Path defaultAssOutput(Path input, Path videoOutput, PipelineOrchestrator.Mode mode) {
+    private static Path defaultSubtitleOutput(
+            Path input,
+            Path videoOutput,
+            PipelineOrchestrator.Mode mode,
+            SubtitleGenerator.Format subtitleFormat
+    ) {
+        var suffix = subtitleSuffix(subtitleFormat);
         return switch (mode) {
-            case SOFT, TRANSCRIPT -> replaceExtension(input, ".zh.ass");
-            case BURN, BOTH -> replaceExtension(videoOutput, ".ass");
+            case SOFT, TRANSCRIPT -> replaceExtension(input, ".zh" + suffix);
+            case BURN, BOTH -> replaceExtension(videoOutput, suffix);
+        };
+    }
+
+    private static String subtitleSuffix(SubtitleGenerator.Format subtitleFormat) {
+        return switch (subtitleFormat) {
+            case ASS -> ".ass";
+            case SRT -> ".srt";
         };
     }
 
@@ -175,10 +207,11 @@ public final class App {
                   -m, --model <name>     DeepSeek 模型（默认：deepseek-v4-pro）
                   -k, --api-key <key>    DeepSeek API Key（优先级高于配置文件）
                   --mode <mode>          burn（默认） | soft | both | transcript
+                  --subtitle-format <f>  ass（默认） | srt
                                          burn = 输出硬字幕视频
-                                         soft = 仅输出 .ass 字幕文件
-                                         both = 同时输出视频和 .ass
-                                         transcript = 输出 .ass 和 .txt 文稿
+                                         soft = 仅输出字幕文件
+                                         both = 同时输出视频和字幕
+                                         transcript = 输出字幕和 .txt 文稿
                   -h, --help             显示帮助
 
                 配置文件（./config.json）：

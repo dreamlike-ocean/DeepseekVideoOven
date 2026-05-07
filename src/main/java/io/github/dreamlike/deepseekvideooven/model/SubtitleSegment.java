@@ -7,11 +7,27 @@ public record SubtitleSegment(long t0Ms, long t1Ms, String text) {
         return format.formatted(index, formatTime(t0Ms), formatTime(t1Ms), text);
     }
 
+    public String toSrtBlock(int index) {
+        return """
+                %d
+                %s --> %s
+                %s
+                """.formatted(index + 1, formatSrtTime(t0Ms), formatSrtTime(t1Ms), text);
+    }
+
     static String formatTime(long ms) {
         long h = ms / 3600000;
         long m = (ms % 3600000) / 60000;
         long s = (ms % 60000) / 1000;
         long cs = (ms % 1000) / 10;
         return "%d:%02d:%02d.%02d".formatted(h, m, s, cs);
+    }
+
+    static String formatSrtTime(long ms) {
+        long h = ms / 3600000;
+        long m = (ms % 3600000) / 60000;
+        long s = (ms % 60000) / 1000;
+        long msPart = ms % 1000;
+        return "%02d:%02d:%02d,%03d".formatted(h, m, s, msPart);
     }
 }

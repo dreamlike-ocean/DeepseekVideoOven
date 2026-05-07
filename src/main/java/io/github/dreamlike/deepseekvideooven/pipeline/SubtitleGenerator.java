@@ -9,11 +9,11 @@ import java.util.List;
 
 public final class SubtitleGenerator {
 
+    public enum Format { ASS, SRT }
+
     private SubtitleGenerator() {}
 
-    public static Path generate(List<SubtitleSegment> segments, Path outputPath) throws IOException {
-        System.out.println("[4/5] 生成 ASS 字幕...");
-
+    public static Path generateAss(List<SubtitleSegment> segments, Path outputPath) throws IOException {
         var sb = new StringBuilder();
         sb.append("""
                 [Script Info]
@@ -37,7 +37,18 @@ public final class SubtitleGenerator {
         }
 
         Files.writeString(outputPath, sb.toString());
-        System.out.printf("  -> 已写出 %d 条字幕到 %s%n", segments.size(), outputPath);
+        System.out.printf("  -> 已写出 %d 条 ASS 字幕到 %s%n", segments.size(), outputPath);
+        return outputPath;
+    }
+
+    public static Path generateSrt(List<SubtitleSegment> segments, Path outputPath) throws IOException {
+        var sb = new StringBuilder();
+        for (int i = 0; i < segments.size(); i++) {
+            sb.append(segments.get(i).toSrtBlock(i)).append('\n');
+        }
+
+        Files.writeString(outputPath, sb.toString());
+        System.out.printf("  -> 已写出 %d 条 SRT 字幕到 %s%n", segments.size(), outputPath);
         return outputPath;
     }
 }

@@ -18,22 +18,25 @@ public final class PipelineOrchestrator {
     private final String sourceLanguage;
     private final String extraTranslationPrompt;
     private final Mode mode;
+    private final SubtitleGenerator.Format subtitleFormat;
 
     public PipelineOrchestrator(
             DeepSeekClient client,
             Path modelPath,
             String sourceLanguage,
             String extraTranslationPrompt,
-            Mode mode
+            Mode mode,
+            SubtitleGenerator.Format subtitleFormat
     ) {
         this.client = client;
         this.modelPath = modelPath;
         this.sourceLanguage = sourceLanguage;
         this.extraTranslationPrompt = extraTranslationPrompt;
         this.mode = mode;
+        this.subtitleFormat = subtitleFormat;
     }
 
-    public void process(Path input, Path videoOutput, Path assOutput) throws IOException, InterruptedException {
+    public void process(Path input, Path videoOutput, Path subtitleOutput) throws IOException, InterruptedException {
         var workDir = Files.createTempDirectory("video-oven-");
         try {
             try (var whisper = WhisperLib.load(modelPath)) {
@@ -60,15 +63,26 @@ public final class PipelineOrchestrator {
                 printStageElapsed(stageStart);
 
                 stageStart = System.nanoTime();
+                System.out.println("[4/5] 生成字幕...");
                 var assFile = workDir.resolve("subtitles.ass");
-                SubtitleGenerator.generate(cleaned, assFile);
+                boolean needsAssForBurn = mode == Mode.BURN || mode == Mode.BOTH;
+                boolean outputsSubtitleFile = mode == Mode.SOFT || mode == Mode.BOTH || mode == Mode.TRANSCRIPT;
+                boolean outputsAssFile = outputsSubtitleFile && subtitleFormat == SubtitleGenerator.Format.ASS;
 
-                if (mode == Mode.SOFT || mode == Mode.BOTH || mode == Mode.TRANSCRIPT) {
-                    Files.copy(assFile, assOutput);
+                if (needsAssForBurn || outputsAssFile) {
+                    SubtitleGenerator.generateAss(cleaned, assFile);
                 }
+                if (outputsSubtitleFile) {
+                    if (subtitleFormat == SubtitleGenerator.Format.ASS) {
+                        Files.copy(assFile, subtitleOutput);
+                    } else {
+                        SubtitleGenerator.generateSrt(cleaned, subtitleOutput);
+                    }
+                }
+
                 if (mode == Mode.TRANSCRIPT) {
-                    writeTranscript(transcriptSegments, assOutput.resolveSibling(
-                            replaceExt(assOutput.getFileName().toString(), ".txt")));
+                    writeTranscript(transcriptSegments, subtitleOutput.resolveSibling(
+                            replaceExt(subtitleOutput.getFileName().toString(), ".txt")));
                 }
                 printStageElapsed(stageStart);
 
