@@ -1,0 +1,132 @@
+{
+  "reflection": [
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.config.OvenConfig",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "ffmpegPath", "parameterTypes": []},
+        {"name": "whisperModelPath", "parameterTypes": []},
+        {"name": "deepseekApiKey", "parameterTypes": []},
+        {"name": "deepseekModel", "parameterTypes": []},
+        {"name": "defaultSourceLang", "parameterTypes": []},
+        {"name": "extraTranslationPrompt", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatRequest",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "model", "parameterTypes": []},
+        {"name": "messages", "parameterTypes": []},
+        {"name": "temperature", "parameterTypes": []},
+        {"name": "maxTokens", "parameterTypes": []},
+        {"name": "stream", "parameterTypes": []},
+        {"name": "thinking", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatRequest$Thinking",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "type", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatResponse",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "id", "parameterTypes": []},
+        {"name": "choices", "parameterTypes": []},
+        {"name": "usage", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.deepseek.dto.Message",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "role", "parameterTypes": []},
+        {"name": "content", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatResponse$Message",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "role", "parameterTypes": []},
+        {"name": "content", "parameterTypes": []},
+        {"name": "reasoningContent", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatResponse$Choice",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "index", "parameterTypes": []},
+        {"name": "message", "parameterTypes": []},
+        {"name": "finishReason", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatResponse$Usage",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "promptTokens", "parameterTypes": []},
+        {"name": "completionTokens", "parameterTypes": []},
+        {"name": "totalTokens", "parameterTypes": []}
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "glob": "native/**"
+    }
+  ],
+  "foreign": {
+    "downcalls": [
+      {
+        "returnType": "void*",
+        "parameterTypes": ["void*"]
+      },
+      {
+        "returnType": "int",
+        "parameterTypes": ["void*", "void*", "int", "int", "void*"]
+      },
+      {
+        "returnType": "int",
+        "parameterTypes": ["void*"]
+      },
+      {
+        "returnType": "long long",
+        "parameterTypes": ["void*", "int"]
+      },
+      {
+        "returnType": "long long",
+        "parameterTypes": ["void*", "int"]
+      },
+      {
+        "returnType": "void*",
+        "parameterTypes": ["void*", "int"]
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": ["void*"]
+      }
+    ]
+  }
+}

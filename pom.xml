@@ -162,6 +162,8 @@
                             <buildArgs>
                                 <arg>-H:+ForeignAPISupport</arg>
                                 <arg>--enable-native-access=ALL-UNNAMED</arg>
+                                <arg>-O3</arg>
+                                <arg>-march=native</arg>
                             </buildArgs>
                         </configuration>
                         <executions>
