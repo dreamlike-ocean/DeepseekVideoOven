@@ -45,7 +45,7 @@ public final class WhisperLib implements AutoCloseable {
                     FunctionDescriptor.of(ValueLayout.JAVA_INT,
                             ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                             ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
-                            ValueLayout.ADDRESS)
+                            ValueLayout.ADDRESS, ValueLayout.ADDRESS)
             );
             N_SEGMENTS = LINKER.downcallHandle(
                     lookup.find("whisper_full_n_segments").orElseThrow(),
@@ -108,13 +108,14 @@ public final class WhisperLib implements AutoCloseable {
         }
     }
 
-    public List<SubtitleSegment> transcribe(float[] audio, String language) {
+    public List<SubtitleSegment> transcribe(float[] audio, String language, String initialPrompt) {
         try {
             var samplesSeg = arena.allocateFrom(ValueLayout.JAVA_FLOAT, audio);
             var langSeg = language != null ? arena.allocateFrom(language) : arena.allocateFrom("auto");
+            var promptSeg = initialPrompt != null ? arena.allocateFrom(initialPrompt) : arena.allocateFrom("");
 
             int result = (int) TRANSCRIBE.invokeExact(ctx, samplesSeg, audio.length,
-                    Runtime.getRuntime().availableProcessors(), langSeg);
+                    Runtime.getRuntime().availableProcessors(), langSeg, promptSeg);
             if (result != 0) {
                 throw new RuntimeException("whisper_bridge_transcribe failed with code: " + result);
             }
@@ -142,7 +143,7 @@ public final class WhisperLib implements AutoCloseable {
     }
 
     public List<SubtitleSegment> transcribe(float[] audio) {
-        return transcribe(audio, null);
+        return transcribe(audio, null, null);
     }
 
     @Override

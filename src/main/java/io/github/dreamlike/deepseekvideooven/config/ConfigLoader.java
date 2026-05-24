@@ -16,7 +16,7 @@ public final class ConfigLoader {
 
     public static OvenConfig load(Path configPath) throws IOException {
         if (!Files.exists(configPath)) {
-            return new OvenConfig(null, null, null, null, null, null);
+            return new OvenConfig(null, null, null, null, null, null, null);
         }
         var raw = Files.readString(configPath);
         var resolved = resolveEnv(raw);

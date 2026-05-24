@@ -78,6 +78,7 @@ public final class App {
                 client,
                 modelPath,
                 resolved.defaultSourceLang(),
+                resolved.whisperInitialPrompt(),
                 resolved.extraTranslationPrompt(),
                 pipelineMode,
                 subtitleFormat
@@ -162,6 +163,7 @@ public final class App {
                 cli.apiKey != null ? cli.apiKey : config.deepseekApiKey(),
                 cli.model != null ? cli.model : config.deepseekModel(),
                 cli.lang != null ? cli.lang : config.defaultSourceLang(),
+                config.whisperInitialPrompt(),
                 config.extraTranslationPrompt()
         );
     }
@@ -221,6 +223,7 @@ public final class App {
                     "deepseekApiKey": "sk-xxx",
                     "deepseekModel": "deepseek-v4-pro",
                     "defaultSourceLang": "auto",
+                    "whisperInitialPrompt": "JavaOne, Netflix, JVM, Project Leyden, AOT, JIT, jcmd, JDK.",
                     "extraTranslationPrompt": "术语约定：如果出现 EmployeeId 保留原文；歌名保留原文并在必要时补中文括注。"
                   }
                   （ffmpegPath 和 whisperModelPath 可省略，程序会自动探测）

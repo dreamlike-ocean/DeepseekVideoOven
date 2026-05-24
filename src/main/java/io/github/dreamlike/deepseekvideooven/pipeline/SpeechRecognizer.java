@@ -11,9 +11,14 @@ public final class SpeechRecognizer {
 
     private SpeechRecognizer() {}
 
-    public static List<SubtitleSegment> transcribe(WhisperLib whisper, float[] audio, String language) {
+    public static List<SubtitleSegment> transcribe(
+            WhisperLib whisper,
+            float[] audio,
+            String language,
+            String initialPrompt
+    ) {
         System.out.println("[2/5] 使用 Whisper 转录...");
-        var segments = whisper.transcribe(audio, language);
+        var segments = whisper.transcribe(audio, language, initialPrompt);
         System.out.printf("  -> 识别出 %d 个文本分段%n", segments.size());
         printMusicWarningIfNeeded(segments);
         return segments;

@@ -16,6 +16,7 @@ public final class PipelineOrchestrator {
     private final DeepSeekClient client;
     private final Path modelPath;
     private final String sourceLanguage;
+    private final String whisperInitialPrompt;
     private final String extraTranslationPrompt;
     private final Mode mode;
     private final SubtitleGenerator.Format subtitleFormat;
@@ -24,6 +25,7 @@ public final class PipelineOrchestrator {
             DeepSeekClient client,
             Path modelPath,
             String sourceLanguage,
+            String whisperInitialPrompt,
             String extraTranslationPrompt,
             Mode mode,
             SubtitleGenerator.Format subtitleFormat
@@ -31,6 +33,7 @@ public final class PipelineOrchestrator {
         this.client = client;
         this.modelPath = modelPath;
         this.sourceLanguage = sourceLanguage;
+        this.whisperInitialPrompt = whisperInitialPrompt;
         this.extraTranslationPrompt = extraTranslationPrompt;
         this.mode = mode;
         this.subtitleFormat = subtitleFormat;
@@ -45,7 +48,7 @@ public final class PipelineOrchestrator {
                 printStageElapsed(stageStart);
 
                 stageStart = System.nanoTime();
-                var segments = SpeechRecognizer.transcribe(whisper, audio, sourceLanguage);
+                var segments = SpeechRecognizer.transcribe(whisper, audio, sourceLanguage, whisperInitialPrompt);
                 printStageElapsed(stageStart);
 
                 if (segments.isEmpty()) {

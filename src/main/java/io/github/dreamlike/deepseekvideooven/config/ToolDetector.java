@@ -15,6 +15,7 @@ public final class ToolDetector {
             String deepseekApiKey,
             String deepseekModel,
             String defaultSourceLang,
+            String whisperInitialPrompt,
             String extraTranslationPrompt
     ) {}
 
@@ -42,6 +43,7 @@ public final class ToolDetector {
                 config.deepseekApiKey(),
                 config.deepseekModel(),
                 config.defaultSourceLang(),
+                config.whisperInitialPrompt(),
                 config.extraTranslationPrompt()
         );
     }
