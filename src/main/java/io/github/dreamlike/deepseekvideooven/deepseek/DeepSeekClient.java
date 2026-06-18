@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatRequest;
 import io.github.dreamlike.deepseekvideooven.deepseek.dto.ChatResponse;
 import io.github.dreamlike.deepseekvideooven.deepseek.dto.Message;
+import io.github.dreamlike.deepseekvideooven.translation.TranslationClient;
+import io.github.dreamlike.deepseekvideooven.translation.TranslationClient.ChatResult;
 
 import java.io.IOException;
 import java.net.URI;
@@ -15,7 +17,7 @@ import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.List;
 
-public final class DeepSeekClient {
+public final class DeepSeekClient implements TranslationClient {
 
     private static final String BASE_URL = "https://api.deepseek.com";
     private static final ObjectMapper MAPPER = new ObjectMapper()
@@ -35,6 +37,7 @@ public final class DeepSeekClient {
                 .build();
     }
 
+    @Override
     public ChatResult chat(String systemPrompt, String userContent) throws IOException, InterruptedException {
         var request = ChatRequest.builder()
                 .model(model)
@@ -139,6 +142,4 @@ public final class DeepSeekClient {
                 || value.equalsIgnoreCase("yes")
                 || value.equalsIgnoreCase("on");
     }
-
-    public record ChatResult(String content, int promptTokens, int completionTokens, int totalTokens) {}
 }

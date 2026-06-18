@@ -13,9 +13,15 @@ import java.util.concurrent.TimeUnit;
 
 public final class FFmpegBridge {
 
-    private static final String FFMPEG = findFfmpeg();
+    private static String ffmpeg = findFfmpeg();
 
     private FFmpegBridge() {}
+
+    public static void configure(String ffmpegPath) {
+        if (ffmpegPath != null && !ffmpegPath.isBlank()) {
+            ffmpeg = ffmpegPath;
+        }
+    }
 
     private static String findFfmpeg() {
         try {
@@ -31,7 +37,7 @@ public final class FFmpegBridge {
 
     public static float[] extractAudio(Path videoPath) {
         var cmd = List.of(
-                FFMPEG,
+                ffmpeg,
                 "-i", videoPath.toString(),
                 "-vn",
                 "-f", "f32le",
@@ -86,7 +92,7 @@ public final class FFmpegBridge {
                 + ":force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2'";
 
         var cmd = List.of(
-                FFMPEG,
+                ffmpeg,
                 "-i", videoPath.toString(),
                 "-vf", filter,
                 "-c:v", "libx264",

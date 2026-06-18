@@ -1,11 +1,16 @@
 package io.github.dreamlike.deepseekvideooven;
 
+import io.github.dreamlike.deepseekvideooven.asr.AsrEngine;
+import io.github.dreamlike.deepseekvideooven.asr.WhisperAsrEngine;
 import io.github.dreamlike.deepseekvideooven.config.ConfigLoader;
 import io.github.dreamlike.deepseekvideooven.config.OvenConfig;
 import io.github.dreamlike.deepseekvideooven.config.ToolDetector;
 import io.github.dreamlike.deepseekvideooven.deepseek.DeepSeekClient;
+import io.github.dreamlike.deepseekvideooven.ffmpeg.FFmpegBridge;
+import io.github.dreamlike.deepseekvideooven.hunyuan.HunyuanTranslationClient;
 import io.github.dreamlike.deepseekvideooven.pipeline.PipelineOrchestrator;
 import io.github.dreamlike.deepseekvideooven.pipeline.SubtitleGenerator;
+import io.github.dreamlike.deepseekvideooven.translation.TranslationClient;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,28 +36,22 @@ public final class App {
             System.exit(1);
         }
 
-        var config = ConfigLoader.load(cli.configPath());
-        config = mergeCli(config, cli);
-
-        if (config.deepseekApiKey() == null || config.deepseekApiKey().isBlank()) {
-            System.err.println("错误：未配置 DeepSeek API Key。");
-            System.err.println("  请在 ./config.json 中设置，或通过 DEEPSEEK_API_KEY 环境变量传入。");
-            System.exit(1);
-        }
-
-        var resolved = ToolDetector.resolve(config);
-
         var pipelineMode = switch (cli.mode()) {
             case "burn" -> PipelineOrchestrator.Mode.BURN;
             case "soft" -> PipelineOrchestrator.Mode.SOFT;
             case "both" -> PipelineOrchestrator.Mode.BOTH;
             case "transcript" -> PipelineOrchestrator.Mode.TRANSCRIPT;
+            case "asr" -> PipelineOrchestrator.Mode.ASR;
             default -> {
-                System.err.println("错误：未知模式 '" + cli.mode() + "'，可选值为：burn、soft、both、transcript");
+                System.err.println("错误：未知模式 '" + cli.mode() + "'，可选值为：burn、soft、both、transcript、asr");
                 System.exit(1);
                 yield PipelineOrchestrator.Mode.BURN;
             }
         };
+
+        var config = mergeCli(ConfigLoader.load(cli.configPath()), cli);
+        var resolved = ToolDetector.resolve(config, pipelineMode != PipelineOrchestrator.Mode.ASR);
+        FFmpegBridge.configure(resolved.ffmpegPath());
 
         var subtitleFormat = switch (cli.subtitleFormat()) {
             case "ass" -> SubtitleGenerator.Format.ASS;
@@ -72,44 +71,45 @@ public final class App {
                 ? replaceExtension(cli.output(), subtitleSuffix(subtitleFormat))
                 : defaultSubtitleOutput(cli.input(), videoOutput, pipelineMode, subtitleFormat);
 
-        var modelPath = Path.of(resolved.whisperModelPath());
-        var client = new DeepSeekClient(resolved.deepseekApiKey(), resolved.deepseekModel());
-        var pipeline = new PipelineOrchestrator(
-                client,
-                modelPath,
-                resolved.defaultSourceLang(),
-                resolved.whisperInitialPrompt(),
-                resolved.extraTranslationPrompt(),
-                pipelineMode,
-                subtitleFormat
-        );
+        try (var asr = createAsr(resolved);
+             var client = pipelineMode == PipelineOrchestrator.Mode.ASR ? null : createTranslationClient(resolved)) {
+            var pipeline = new PipelineOrchestrator(
+                    asr,
+                    client,
+                    resolved.sourceLang(),
+                    resolved.translation().extraPrompt(),
+                    pipelineMode,
+                    subtitleFormat
+            );
 
-        System.out.println("输入文件： " + cli.input());
-        System.out.println("运行模式： " + cli.mode());
-        var isVideoOut = pipelineMode == PipelineOrchestrator.Mode.BURN || pipelineMode == PipelineOrchestrator.Mode.BOTH;
-        var isAssOut = pipelineMode != PipelineOrchestrator.Mode.BURN;
-        if (isVideoOut) {
-            System.out.println("输出视频： " + videoOutput);
-        }
-        if (isAssOut) {
-            System.out.println("字幕格式： " + cli.subtitleFormat());
-            System.out.println("字幕文件： " + subtitleOutput);
-        }
-        System.out.println("翻译模型： " + resolved.deepseekModel());
-        System.out.println("源语言：   " + resolved.defaultSourceLang());
-        System.out.println("---");
+            System.out.println("输入文件： " + cli.input());
+            System.out.println("运行模式： " + cli.mode());
+            var isVideoOut = pipelineMode == PipelineOrchestrator.Mode.BURN || pipelineMode == PipelineOrchestrator.Mode.BOTH;
+            var isSubtitleOut = pipelineMode != PipelineOrchestrator.Mode.BURN;
+            if (isVideoOut) {
+                System.out.println("输出视频： " + videoOutput);
+            }
+            if (isSubtitleOut) {
+                System.out.println("字幕格式： " + cli.subtitleFormat());
+                System.out.println("字幕文件： " + subtitleOutput);
+            }
+            System.out.println("ASR 后端： " + resolved.asr().backend());
+            System.out.println("翻译后端： " + resolved.translation().backend());
+            System.out.println("源语言：   " + resolved.sourceLang());
+            System.out.println("---");
 
-        long totalStartedAt = System.nanoTime();
-        pipeline.process(cli.input(), videoOutput, subtitleOutput);
-        double totalSeconds = (System.nanoTime() - totalStartedAt) / 1_000_000_000.0;
+            long totalStartedAt = System.nanoTime();
+            pipeline.process(cli.input(), videoOutput, subtitleOutput);
+            double totalSeconds = (System.nanoTime() - totalStartedAt) / 1_000_000_000.0;
 
-        System.out.println("---");
-        System.out.printf("总耗时： %.2f 秒%n", totalSeconds);
-        if (isVideoOut) {
-            System.out.println("完成： " + videoOutput.toAbsolutePath());
-        }
-        if (isAssOut) {
-            System.out.println("完成： " + subtitleOutput.toAbsolutePath());
+            System.out.println("---");
+            System.out.printf("总耗时： %.2f 秒%n", totalSeconds);
+            if (isVideoOut) {
+                System.out.println("完成： " + videoOutput.toAbsolutePath());
+            }
+            if (isSubtitleOut) {
+                System.out.println("完成： " + subtitleOutput.toAbsolutePath());
+            }
         }
     }
 
@@ -120,10 +120,16 @@ public final class App {
             String lang,
             String model,
             String apiKey,
+            String asrBackend,
+            String translationBackend,
+            String whisperModelPath,
+            String hunyuanModelPath,
+            Integer hunyuanGpuLayers,
             String mode,
             String subtitleFormat,
             boolean help
-    ) {}
+    ) {
+    }
 
     private static CliArgs parseArgs(String[] args) {
         Path input = null;
@@ -132,6 +138,11 @@ public final class App {
         String lang = null;
         String model = null;
         String apiKey = null;
+        String asrBackend = null;
+        String translationBackend = null;
+        String whisperModelPath = null;
+        String hunyuanModelPath = null;
+        Integer hunyuanGpuLayers = null;
         String mode = "burn";
         String subtitleFormat = "ass";
         boolean help = false;
@@ -144,6 +155,11 @@ public final class App {
                 case "-l", "--lang" -> lang = args[++i];
                 case "-m", "--model" -> model = args[++i];
                 case "-k", "--api-key" -> apiKey = args[++i];
+                case "--asr-backend" -> asrBackend = args[++i];
+                case "--translation-backend" -> translationBackend = args[++i];
+                case "--whisper-model" -> whisperModelPath = args[++i];
+                case "--hunyuan-model" -> hunyuanModelPath = args[++i];
+                case "--hunyuan-gpu-layers" -> hunyuanGpuLayers = Integer.parseInt(args[++i]);
                 case "--mode" -> mode = args[++i];
                 case "--subtitle-format" -> subtitleFormat = args[++i];
                 case "-h", "--help" -> help = true;
@@ -153,19 +169,85 @@ public final class App {
                 }
             }
         }
-        return new CliArgs(input, output, configPath, lang, model, apiKey, mode, subtitleFormat, help);
+        return new CliArgs(
+                input, output, configPath, lang, model, apiKey,
+                asrBackend, translationBackend, whisperModelPath,
+                hunyuanModelPath, hunyuanGpuLayers, mode, subtitleFormat, help
+        );
     }
 
     private static OvenConfig mergeCli(OvenConfig config, CliArgs cli) {
+        var asr = config.asr();
+        var translation = config.translation();
+        var whisper = asr.whisper();
+        var hunyuan = translation.hunyuan();
+        var deepseek = translation.deepseek();
+
+        var translationBackend = cli.translationBackend != null ? cli.translationBackend : translation.backend();
+        var deepseekModel = deepseek.model();
+        var hunyuanModelPath = cli.hunyuanModelPath != null ? cli.hunyuanModelPath : hunyuan.modelPath();
+        if (cli.model != null) {
+            if ("hunyuan".equalsIgnoreCase(translationBackend)) {
+                hunyuanModelPath = cli.model;
+            } else {
+                deepseekModel = cli.model;
+            }
+        }
+
         return new OvenConfig(
                 config.ffmpegPath(),
-                config.whisperModelPath(),
-                cli.apiKey != null ? cli.apiKey : config.deepseekApiKey(),
-                cli.model != null ? cli.model : config.deepseekModel(),
-                cli.lang != null ? cli.lang : config.defaultSourceLang(),
-                config.whisperInitialPrompt(),
-                config.extraTranslationPrompt()
+                cli.lang != null ? cli.lang : config.sourceLang(),
+                new OvenConfig.Asr(
+                        cli.asrBackend != null ? cli.asrBackend : asr.backend(),
+                        asr.initialPrompt(),
+                        new OvenConfig.Whisper(cli.whisperModelPath != null ? cli.whisperModelPath : whisper.modelPath())
+                ),
+                new OvenConfig.Translation(
+                        translationBackend,
+                        translation.extraPrompt(),
+                        new OvenConfig.Hunyuan(
+                                hunyuanModelPath,
+                                hunyuan.contextSize(),
+                                cli.hunyuanGpuLayers != null ? cli.hunyuanGpuLayers : hunyuan.gpuLayers(),
+                                hunyuan.threads(),
+                                hunyuan.maxTokens(),
+                                hunyuan.temperature(),
+                                hunyuan.topP(),
+                                hunyuan.topK(),
+                                hunyuan.repeatPenalty()
+                        ),
+                        new OvenConfig.DeepSeek(cli.apiKey != null ? cli.apiKey : deepseek.apiKey(), deepseekModel)
+                )
         );
+    }
+
+    private static AsrEngine createAsr(ToolDetector.ResolvedConfig config) {
+        var asr = config.asr();
+        return switch (asr.backend()) {
+            case "whisper" -> WhisperAsrEngine.load(Path.of(asr.modelPath()), asr.initialPrompt());
+            default -> throw new IllegalStateException("Unsupported ASR backend: " + asr.backend());
+        };
+    }
+
+    private static TranslationClient createTranslationClient(ToolDetector.ResolvedConfig config) {
+        var translation = config.translation();
+        var hunyuan = translation.hunyuan();
+        var deepseek = translation.deepseek();
+        return switch (translation.backend()) {
+            case "hunyuan" -> HunyuanTranslationClient.load(
+                    Path.of(hunyuan.modelPath()),
+                    hunyuan.contextSize(),
+                    hunyuan.gpuLayers(),
+                    hunyuan.threads(),
+                    hunyuan.maxTokens(),
+                    hunyuan.temperature(),
+                    hunyuan.topP(),
+                    hunyuan.topK(),
+                    hunyuan.repeatPenalty()
+            );
+            case "deepseek" -> new DeepSeekClient(deepseek.apiKey(), deepseek.model());
+            default -> throw new IllegalStateException("Unsupported translation backend: " + translation.backend());
+        };
     }
 
     private static Path replaceExtension(Path path, String suffix) {
@@ -184,6 +266,7 @@ public final class App {
         var suffix = subtitleSuffix(subtitleFormat);
         return switch (mode) {
             case SOFT, TRANSCRIPT -> replaceExtension(input, ".zh" + suffix);
+            case ASR -> replaceExtension(input, ".asr" + suffix);
             case BURN, BOTH -> replaceExtension(videoOutput, suffix);
         };
     }
@@ -197,42 +280,46 @@ public final class App {
 
     private static void printHelp() {
         System.out.println("""
-                DeepseekVideoOven —— 使用 DeepSeek API 为任意视频生成中文字幕
-
+                DeepseekVideoOven —— 使用本地模型为任意视频生成中文字幕
+                
                 用法：video-oven -i <input> [options]
-
+                
                 参数：
-                  -i, --input <file>     输入视频文件（必填）
-                  -o, --output <file>    输出视频文件（默认：input_zh.mp4）
-                  -c, --config <file>    配置文件路径（默认：./config.json）
-                  -l, --lang <code>      源语言提示（en/ja/ko/auto）
-                  -m, --model <name>     DeepSeek 模型（默认：deepseek-v4-pro）
-                  -k, --api-key <key>    DeepSeek API Key（优先级高于配置文件）
-                  --mode <mode>          burn（默认） | soft | both | transcript
-                  --subtitle-format <f>  ass（默认） | srt
-                                         burn = 输出硬字幕视频
-                                         soft = 仅输出字幕文件
-                                         both = 同时输出视频和字幕
-                                         transcript = 输出字幕、中文 .txt 文稿和原始 .orig.txt 文稿
-                  -h, --help             显示帮助
-
+                  -i, --input <file>          输入视频文件（必填）
+                  -o, --output <file>         输出视频文件（默认：input_zh.mp4）
+                  -c, --config <file>         配置文件路径（默认：./config.json）
+                  -l, --lang <code>           源语言提示（en/ja/ko/auto）
+                  -m, --model <path|name>     翻译模型；hunyuan 时是 GGUF 路径，deepseek 时是模型名
+                  -k, --api-key <key>         DeepSeek API Key（仅 translation.backend=deepseek 时使用）
+                  --asr-backend <backend>     whisper（默认）
+                  --translation-backend <b>   hunyuan（默认） | deepseek
+                  --whisper-model <file>      whisper.cpp ggml 模型
+                  --hunyuan-model <file>      Hunyuan/Hy-MT GGUF 模型
+                  --hunyuan-gpu-layers <n>    llama.cpp GPU offload 层数；0=CPU，999=尽量全量 offload
+                  --mode <mode>               burn（默认） | soft | both | transcript | asr
+                  --subtitle-format <f>       ass（默认） | srt
+                  -h, --help                  显示帮助
+                
                 配置文件（./config.json）：
                   {
                     "ffmpegPath": "",
-                    "whisperModelPath": "~/.video-oven/models/ggml-small.bin",
-                    "deepseekApiKey": "sk-xxx",
-                    "deepseekModel": "deepseek-v4-pro",
-                    "defaultSourceLang": "auto",
-                    "whisperInitialPrompt": "JavaOne, Netflix, JVM, Project Leyden, AOT, JIT, jcmd, JDK.",
-                    "extraTranslationPrompt": "术语约定：如果出现 EmployeeId 保留原文；歌名保留原文并在必要时补中文括注。"
+                    "sourceLang": "auto",
+                    "asr": {
+                      "backend": "whisper",
+                      "initialPrompt": "Preserve spelling: PostgreSQL, Redis, CUDA, FFmpeg.",
+                      "whisper": { "modelPath": "~/.video-oven/models/ggml-small.bin" }
+                    },
+                    "translation": {
+                      "backend": "hunyuan",
+                      "extraPrompt": "术语约定：如果出现 EmployeeId 保留原文。",
+                      "hunyuan": { "modelPath": "~/.video-oven/models/Hy-MT2-1.8B-Q4_K_M.gguf", "gpuLayers": 999 },
+                      "deepseek": { "apiKey": "${DEEPSEEK_API_KEY}", "model": "deepseek-v4-pro" }
+                    }
                   }
-                  （ffmpegPath 和 whisperModelPath 可省略，程序会自动探测）
-
-                运行前准备：
-                  - ffmpeg (https://ffmpeg.org/download.html)
-                  - Whisper 模型：将 ggml-*.bin 放到 ./models/ 或 ~/.video-oven/models/
-                    下载地址：https://huggingface.co/ggerganov/whisper.cpp/tree/main
-                  - DeepSeek API Key：https://platform.deepseek.com/api_keys
+                
+                说明：
+                  - Hunyuan/Whisper 路径支持 macOS Metal / Linux CUDA。
+                  - ffmpeg 当前仍用于音频解码；soft/transcript 模式不会烧录视频。
                 """);
     }
 }

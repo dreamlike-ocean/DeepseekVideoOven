@@ -1,8 +1,8 @@
 package io.github.dreamlike.deepseekvideooven.pipeline;
 
-import io.github.dreamlike.deepseekvideooven.deepseek.DeepSeekClient;
+import io.github.dreamlike.deepseekvideooven.asr.AsrEngine;
 import io.github.dreamlike.deepseekvideooven.model.SubtitleSegment;
-import io.github.dreamlike.deepseekvideooven.whisper.WhisperLib;
+import io.github.dreamlike.deepseekvideooven.translation.TranslationClient;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -11,30 +11,27 @@ import java.util.List;
 
 public final class PipelineOrchestrator {
 
-    public enum Mode { BURN, SOFT, BOTH, TRANSCRIPT }
+    public enum Mode {BURN, SOFT, BOTH, TRANSCRIPT, ASR}
 
-    private final DeepSeekClient client;
-    private final Path modelPath;
+    private final AsrEngine asr;
+    private final TranslationClient client;
     private final String sourceLanguage;
-    private final String whisperInitialPrompt;
-    private final String extraTranslationPrompt;
+    private final String extraPrompt;
     private final Mode mode;
     private final SubtitleGenerator.Format subtitleFormat;
 
     public PipelineOrchestrator(
-            DeepSeekClient client,
-            Path modelPath,
+            AsrEngine asr,
+            TranslationClient client,
             String sourceLanguage,
-            String whisperInitialPrompt,
-            String extraTranslationPrompt,
+            String extraPrompt,
             Mode mode,
             SubtitleGenerator.Format subtitleFormat
     ) {
+        this.asr = asr;
         this.client = client;
-        this.modelPath = modelPath;
         this.sourceLanguage = sourceLanguage;
-        this.whisperInitialPrompt = whisperInitialPrompt;
-        this.extraTranslationPrompt = extraTranslationPrompt;
+        this.extraPrompt = extraPrompt;
         this.mode = mode;
         this.subtitleFormat = subtitleFormat;
     }
@@ -42,65 +39,80 @@ public final class PipelineOrchestrator {
     public void process(Path input, Path videoOutput, Path subtitleOutput) throws IOException, InterruptedException {
         var workDir = Files.createTempDirectory("video-oven-");
         try {
-            try (var whisper = WhisperLib.load(modelPath)) {
-                long stageStart = System.nanoTime();
-                var audio = AudioExtractor.extract(input);
-                printStageElapsed(stageStart);
+            long stageStart = System.nanoTime();
+            var audio = AudioExtractor.extract(input);
+            printStageElapsed(stageStart);
 
+            stageStart = System.nanoTime();
+            var segments = SpeechRecognizer.transcribe(asr, audio, sourceLanguage);
+            printStageElapsed(stageStart);
+
+            if (segments.isEmpty()) {
+                System.out.println("未检测到语音内容。");
+                return;
+            }
+
+            if (mode == Mode.ASR) {
                 stageStart = System.nanoTime();
-                var segments = SpeechRecognizer.transcribe(whisper, audio, sourceLanguage, whisperInitialPrompt);
-                printStageElapsed(stageStart);
-
-                if (segments.isEmpty()) {
-                    System.out.println("未检测到语音内容。");
-                    return;
-                }
-
-                stageStart = System.nanoTime();
-                var translator = new Translator(client, extraTranslationPrompt);
-                var translated = translator.translate(segments);
-                var cleaned = SegmentCleaner.clean(translated);
-                var transcriptSegments = mode == Mode.TRANSCRIPT
-                        ? SegmentCleaner.cleanForTranscript(translated)
-                        : cleaned;
-                printStageElapsed(stageStart);
-
-                stageStart = System.nanoTime();
-                System.out.println("[4/5] 生成字幕...");
-                var assFile = workDir.resolve("subtitles.ass");
-                boolean needsAssForBurn = mode == Mode.BURN || mode == Mode.BOTH;
-                boolean outputsSubtitleFile = mode == Mode.SOFT || mode == Mode.BOTH || mode == Mode.TRANSCRIPT;
-                boolean outputsAssFile = outputsSubtitleFile && subtitleFormat == SubtitleGenerator.Format.ASS;
-
-                if (needsAssForBurn || outputsAssFile) {
-                    SubtitleGenerator.generateAss(cleaned, assFile);
-                }
-                if (outputsSubtitleFile) {
-                    if (subtitleFormat == SubtitleGenerator.Format.ASS) {
-                        Files.copy(assFile, subtitleOutput);
-                    } else {
-                        SubtitleGenerator.generateSrt(cleaned, subtitleOutput);
-                    }
-                }
-
-                if (mode == Mode.TRANSCRIPT) {
-                    var translatedTranscriptPath = subtitleOutput.resolveSibling(
-                            replaceExt(subtitleOutput.getFileName().toString(), ".txt"));
-                    var originalTranscriptPath = subtitleOutput.resolveSibling(
-                            replaceExt(subtitleOutput.getFileName().toString(), ".orig.txt"));
-                    writeTranscript(transcriptSegments, translatedTranscriptPath, "已写出中文文稿");
-                    writeTranscript(segments, originalTranscriptPath, "已写出原始文稿");
-                }
-                printStageElapsed(stageStart);
-
-                if (mode == Mode.BURN || mode == Mode.BOTH) {
-                    stageStart = System.nanoTime();
-                    VideoBurner.burn(input, assFile, videoOutput);
-                    printStageElapsed(stageStart);
+                System.out.println("[3/3] 生成 ASR 字幕...");
+                if (subtitleFormat == SubtitleGenerator.Format.ASS) {
+                    SubtitleGenerator.generateAss(segments, subtitleOutput);
                 } else {
-                    System.out.println("[5/5] 跳过烧录字幕到视频...");
-                    System.out.println("  -> 当前模式不包含视频烧录。");
+                    SubtitleGenerator.generateSrt(segments, subtitleOutput);
                 }
+                writeTranscript(segments, subtitleOutput.resolveSibling(
+                        replaceExt(subtitleOutput.getFileName().toString(), ".txt")), "已写出 ASR 文稿");
+                printStageElapsed(stageStart);
+                return;
+            }
+
+            stageStart = System.nanoTime();
+            if (client == null) {
+                throw new IllegalStateException("当前模式需要翻译后端。");
+            }
+            var translator = new Translator(client, extraPrompt);
+            var translated = translator.translate(segments);
+            var cleaned = SegmentCleaner.clean(translated);
+            var transcriptSegments = mode == Mode.TRANSCRIPT
+                    ? SegmentCleaner.cleanForTranscript(translated)
+                    : cleaned;
+            printStageElapsed(stageStart);
+
+            stageStart = System.nanoTime();
+            System.out.println("[4/5] 生成字幕...");
+            var assFile = workDir.resolve("subtitles.ass");
+            boolean needsAssForBurn = mode == Mode.BURN || mode == Mode.BOTH;
+            boolean outputsSubtitleFile = mode == Mode.SOFT || mode == Mode.BOTH || mode == Mode.TRANSCRIPT;
+            boolean outputsAssFile = outputsSubtitleFile && subtitleFormat == SubtitleGenerator.Format.ASS;
+
+            if (needsAssForBurn || outputsAssFile) {
+                SubtitleGenerator.generateAss(cleaned, assFile);
+            }
+            if (outputsSubtitleFile) {
+                if (subtitleFormat == SubtitleGenerator.Format.ASS) {
+                    Files.copy(assFile, subtitleOutput);
+                } else {
+                    SubtitleGenerator.generateSrt(cleaned, subtitleOutput);
+                }
+            }
+
+            if (mode == Mode.TRANSCRIPT) {
+                var translatedTranscriptPath = subtitleOutput.resolveSibling(
+                        replaceExt(subtitleOutput.getFileName().toString(), ".txt"));
+                var originalTranscriptPath = subtitleOutput.resolveSibling(
+                        replaceExt(subtitleOutput.getFileName().toString(), ".orig.txt"));
+                writeTranscript(transcriptSegments, translatedTranscriptPath, "已写出中文文稿");
+                writeTranscript(segments, originalTranscriptPath, "已写出原始文稿");
+            }
+            printStageElapsed(stageStart);
+
+            if (mode == Mode.BURN || mode == Mode.BOTH) {
+                stageStart = System.nanoTime();
+                VideoBurner.burn(input, assFile, videoOutput);
+                printStageElapsed(stageStart);
+            } else {
+                System.out.println("[5/5] 跳过烧录字幕到视频...");
+                System.out.println("  -> 当前模式不包含视频烧录。");
             }
         } finally {
             if (mode == Mode.BURN) {

@@ -14,6 +14,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <native.res.dir>${project.basedir}/src/main/resources/native</native.res.dir>
         <native.build.dir>${project.build.directory}/native-build</native.build.dir>
+        <hunyuan.native.build.dir>${project.build.directory}/hunyuan-native-build</hunyuan.native.build.dir>
         <jackson.version>2.18.2</jackson.version>
         <main.class>io.github.dreamlike.deepseekvideooven.App</main.class>
         <skip.native.build>false</skip.native.build>
@@ -135,6 +136,42 @@
                                 <argument>--build</argument><argument>${native.build.dir}</argument>
                                 <argument>--config</argument><argument>Release</argument>
                                 <argument>--target</argument><argument>video_oven_native_bundle</argument>
+                                <argument>-j</argument>
+                            </arguments>
+                            <skip>${skip.native.build}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>hunyuan-cmake-configure</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>cmake</executable>
+                            <workingDirectory>${project.basedir}</workingDirectory>
+                            <arguments>
+                                <argument>-S</argument>
+                                <argument>native/hunyuan</argument>
+                                <argument>-B</argument>
+                                <argument>${hunyuan.native.build.dir}</argument>
+                                <argument>-DCMAKE_BUILD_TYPE=Release</argument>
+                                <argument>-DVIDEO_OVEN_NATIVE_DIR=${native.res.dir}</argument>
+                                <argument>-DVIDEO_OVEN_CUDA=${video.oven.cuda}</argument>
+                                <argument>-DVIDEO_OVEN_METAL=${video.oven.metal}</argument>
+                            </arguments>
+                            <skip>${skip.native.build}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>hunyuan-cmake-build</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>cmake</executable>
+                            <workingDirectory>${project.basedir}</workingDirectory>
+                            <arguments>
+                                <argument>--build</argument><argument>${hunyuan.native.build.dir}</argument>
+                                <argument>--config</argument><argument>Release</argument>
+                                <argument>--target</argument><argument>video_oven_hunyuan_bundle</argument>
                                 <argument>-j</argument>
                             </arguments>
                             <skip>${skip.native.build}</skip>

@@ -1,11 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(video_oven_native C CXX)
-
-if (POLICY CMP0068)
-    cmake_policy(SET CMP0068 NEW)
-endif()
-set(CMAKE_POLICY_DEFAULT_CMP0068 NEW)
+project(video_oven_hunyuan_native C CXX)
 
 set(VIDEO_OVEN_CUDA "AUTO" CACHE STRING "CUDA policy: AUTO, ON, or OFF")
 set_property(CACHE VIDEO_OVEN_CUDA PROPERTY STRINGS AUTO ON OFF)
@@ -14,14 +9,9 @@ set(VIDEO_OVEN_METAL "AUTO" CACHE STRING "Metal policy: AUTO, ON, or OFF")
 set_property(CACHE VIDEO_OVEN_METAL PROPERTY STRINGS AUTO ON OFF)
 
 set(VIDEO_OVEN_NATIVE_DIR
-    "${CMAKE_CURRENT_LIST_DIR}/../src/main/resources/native"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src/main/resources/native"
     CACHE PATH "Directory where native libraries are bundled for the JAR"
 )
-
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 function(video_oven_normalize_policy name output)
     string(TOUPPER "${${name}}" normalized)
@@ -68,25 +58,25 @@ elseif (VIDEO_OVEN_METAL_POLICY STREQUAL "AUTO" AND APPLE)
     set(VIDEO_OVEN_ENABLE_METAL ON)
 endif()
 
-message(STATUS "VIDEO_OVEN_CUDA=${VIDEO_OVEN_CUDA_POLICY} -> GGML_CUDA=${VIDEO_OVEN_ENABLE_CUDA}")
-message(STATUS "VIDEO_OVEN_METAL=${VIDEO_OVEN_METAL_POLICY} -> GGML_METAL=${VIDEO_OVEN_ENABLE_METAL}")
-
 set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared native libraries" FORCE)
 set(GGML_CUDA ${VIDEO_OVEN_ENABLE_CUDA} CACHE BOOL "Enable ggml CUDA backend" FORCE)
 set(GGML_METAL ${VIDEO_OVEN_ENABLE_METAL} CACHE BOOL "Enable ggml Metal backend" FORCE)
-set(WHISPER_BUILD_TESTS OFF CACHE BOOL "Do not build whisper.cpp tests" FORCE)
-set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "Do not build whisper.cpp examples" FORCE)
-set(WHISPER_BUILD_SERVER OFF CACHE BOOL "Do not build whisper.cpp server" FORCE)
+set(LLAMA_BUILD_TESTS OFF CACHE BOOL "Do not build llama.cpp tests" FORCE)
+set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "Do not build llama.cpp examples" FORCE)
+set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Do not build llama.cpp server" FORCE)
+set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "Do not build llama.cpp tools" FORCE)
+set(LLAMA_BUILD_APP OFF CACHE BOOL "Do not build llama.cpp app" FORCE)
+set(LLAMA_BUILD_COMMON OFF CACHE BOOL "Do not build llama.cpp common library" FORCE)
+set(LLAMA_CURL OFF CACHE BOOL "Do not use curl in llama.cpp" FORCE)
 
-add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../third_party/whisper.cpp" "${CMAKE_BINARY_DIR}/whisper.cpp")
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../third_party/llama.cpp" "${CMAKE_BINARY_DIR}/llama.cpp")
 
-add_library(whisper_bridge SHARED whisper_bridge.c)
-target_include_directories(whisper_bridge PRIVATE
-    "${CMAKE_CURRENT_LIST_DIR}/../third_party/whisper.cpp/include"
-    "${CMAKE_CURRENT_LIST_DIR}/../third_party/whisper.cpp/ggml/include"
+add_library(hunyuan_bridge SHARED "${CMAKE_CURRENT_LIST_DIR}/../hunyuan_bridge.cpp")
+target_include_directories(hunyuan_bridge PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/../../third_party/llama.cpp/include"
 )
-target_link_libraries(whisper_bridge PRIVATE whisper)
-set_target_properties(whisper_bridge PROPERTIES OUTPUT_NAME whisper_bridge)
+target_link_libraries(hunyuan_bridge PRIVATE llama)
+set_target_properties(hunyuan_bridge PROPERTIES OUTPUT_NAME hunyuan_bridge)
 
 if (APPLE)
     set(VIDEO_OVEN_ORIGIN_RPATH "@loader_path")
@@ -103,26 +93,26 @@ function(video_oven_configure_runtime_path target_name)
     endif()
 endfunction()
 
-set(VIDEO_OVEN_NATIVE_TARGETS
+set(VIDEO_OVEN_HUNYUAN_NATIVE_TARGETS
     ggml-base
     ggml-cpu
     ggml
-    whisper
-    whisper_bridge
+    llama
+    hunyuan_bridge
 )
 
 foreach (optional_target IN ITEMS ggml-blas ggml-metal ggml-cuda)
     if (TARGET ${optional_target})
-        list(APPEND VIDEO_OVEN_NATIVE_TARGETS ${optional_target})
+        list(APPEND VIDEO_OVEN_HUNYUAN_NATIVE_TARGETS ${optional_target})
     endif()
 endforeach()
 
-foreach (native_target IN LISTS VIDEO_OVEN_NATIVE_TARGETS)
+foreach (native_target IN LISTS VIDEO_OVEN_HUNYUAN_NATIVE_TARGETS)
     video_oven_configure_runtime_path(${native_target})
 endforeach()
 
 set(VIDEO_OVEN_NATIVE_LIBS_CONTENT "set(VIDEO_OVEN_NATIVE_LIBS\n")
-foreach (native_target IN LISTS VIDEO_OVEN_NATIVE_TARGETS)
+foreach (native_target IN LISTS VIDEO_OVEN_HUNYUAN_NATIVE_TARGETS)
     string(APPEND VIDEO_OVEN_NATIVE_LIBS_CONTENT "    \"$<TARGET_FILE:${native_target}>\"\n")
     string(APPEND VIDEO_OVEN_NATIVE_LIBS_CONTENT "    \"$<TARGET_LINKER_FILE:${native_target}>\"\n")
 
@@ -133,22 +123,16 @@ foreach (native_target IN LISTS VIDEO_OVEN_NATIVE_TARGETS)
 endforeach()
 string(APPEND VIDEO_OVEN_NATIVE_LIBS_CONTENT ")\n")
 
-set(VIDEO_OVEN_NATIVE_LIBS_FILE "${CMAKE_CURRENT_BINARY_DIR}/video_oven_native_libs.cmake")
+set(VIDEO_OVEN_NATIVE_LIBS_FILE "${CMAKE_CURRENT_BINARY_DIR}/video_oven_hunyuan_native_libs.cmake")
 file(GENERATE
     OUTPUT "${VIDEO_OVEN_NATIVE_LIBS_FILE}"
     CONTENT "${VIDEO_OVEN_NATIVE_LIBS_CONTENT}"
 )
 
-add_custom_target(video_oven_native_prepare
-    COMMAND "${CMAKE_COMMAND}"
-            -DVIDEO_OVEN_NATIVE_DIR="${VIDEO_OVEN_NATIVE_DIR}"
-            -P "${CMAKE_CURRENT_LIST_DIR}/clean_native_dir.cmake"
-)
-
-add_custom_target(video_oven_native_bundle ALL
+add_custom_target(video_oven_hunyuan_bundle ALL
     COMMAND "${CMAKE_COMMAND}"
             -DVIDEO_OVEN_NATIVE_DIR="${VIDEO_OVEN_NATIVE_DIR}"
             -DVIDEO_OVEN_NATIVE_LIBS_FILE="${VIDEO_OVEN_NATIVE_LIBS_FILE}"
-            -P "${CMAKE_CURRENT_LIST_DIR}/bundle_native_libs.cmake"
-    DEPENDS video_oven_native_prepare ${VIDEO_OVEN_NATIVE_TARGETS}
+            -P "${CMAKE_CURRENT_LIST_DIR}/../bundle_native_libs.cmake"
+    DEPENDS ${VIDEO_OVEN_HUNYUAN_NATIVE_TARGETS}
 )

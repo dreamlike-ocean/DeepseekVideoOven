@@ -1,7 +1,7 @@
 package io.github.dreamlike.deepseekvideooven.pipeline;
 
-import io.github.dreamlike.deepseekvideooven.deepseek.DeepSeekClient;
 import io.github.dreamlike.deepseekvideooven.model.SubtitleSegment;
+import io.github.dreamlike.deepseekvideooven.translation.TranslationClient;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -16,7 +16,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class Translator {
 
     private static final int BATCH_SIZE = 20;
-    private static final int MAX_CONCURRENT_BATCHES = 10;
     private static final String SEGMENT_PREFIX = "[[SEG-";
     private static final String SYSTEM_PROMPT = """
             You are a professional subtitle translator. Translate the following subtitle segments into concise, natural Chinese.
@@ -39,12 +38,12 @@ public final class Translator {
             16. Keep translations consistent within the batch.
             """;
 
-    private final DeepSeekClient client;
-    private final String extraTranslationPrompt;
+    private final TranslationClient client;
+    private final String extraPrompt;
 
-    public Translator(DeepSeekClient client, String extraTranslationPrompt) {
+    public Translator(TranslationClient client, String extraPrompt) {
         this.client = client;
-        this.extraTranslationPrompt = extraTranslationPrompt;
+        this.extraPrompt = extraPrompt;
     }
 
     public List<SubtitleSegment> translate(List<SubtitleSegment> segments) throws IOException, InterruptedException {
@@ -57,7 +56,7 @@ public final class Translator {
         var results = new BatchTranslation[batches.size()];
         var completedSegments = new AtomicInteger();
 
-        try (var executor = Executors.newFixedThreadPool(MAX_CONCURRENT_BATCHES, Thread.ofVirtual().name("translator-", 0).factory())) {
+        try (var executor = Executors.newFixedThreadPool(client.maxConcurrentBatches(), Thread.ofVirtual().name("translator-", 0).factory())) {
             var futures = new ArrayList<CompletableFuture<BatchTranslation>>(batches.size());
 
             for (var batch : batches) {
@@ -148,12 +147,12 @@ public final class Translator {
     }
 
     private String buildSystemPrompt() {
-        if (extraTranslationPrompt == null || extraTranslationPrompt.isBlank()) {
+        if (extraPrompt == null || extraPrompt.isBlank()) {
             return SYSTEM_PROMPT;
         }
         return SYSTEM_PROMPT
                 + "\nAdditional user instructions:\n"
-                + extraTranslationPrompt.strip()
+                + extraPrompt.strip()
                 + "\n";
     }
 
@@ -217,14 +216,13 @@ public final class Translator {
             }
 
             int mid = segments.size() / 2;
-            int leftSize = mid;
             int rightSize = segments.size() - mid;
             System.out.printf(
                     "  -> %s 子任务 %d 输出格式异常，拆分重试：%d -> %d + %d（返回内容片段：%s）%n",
                     label,
                     subtaskIndex,
                     segments.size(),
-                    leftSize,
+                    mid,
                     rightSize,
                     previewResponse(response.content())
             );
@@ -271,7 +269,7 @@ public final class Translator {
 
         if (lines.size() != expectedCount) {
             throw new IllegalStateException(
-                    "DeepSeek 返回的行数不匹配，期望 %d，实际 %d".formatted(expectedCount, lines.size())
+                    "翻译模型返回的行数不匹配，期望 %d，实际 %d".formatted(expectedCount, lines.size())
             );
         }
         return lines;
@@ -323,7 +321,7 @@ public final class Translator {
         for (int i = 0; i < results.size(); i++) {
             if (results.get(i).isBlank()) {
                 throw new IllegalStateException(
-                        "DeepSeek 返回的分段标记不完整，缺少第 %d 行".formatted(i + 1)
+                        "翻译模型返回的分段标记不完整，缺少第 %d 行".formatted(i + 1)
                 );
             }
         }
@@ -372,11 +370,14 @@ public final class Translator {
         return throwable;
     }
 
-    private record BatchRequest(int batchIndex, List<SubtitleSegment> segments) {}
+    private record BatchRequest(int batchIndex, List<SubtitleSegment> segments) {
+    }
 
-    private record BatchTranslation(int batchIndex, List<SubtitleSegment> segments, List<String> translatedLines) {}
+    private record BatchTranslation(int batchIndex, List<SubtitleSegment> segments, List<String> translatedLines) {
+    }
 
-    private record TranslationResult(List<String> lines, int promptTokens, int completionTokens, int totalTokens) {}
+    private record TranslationResult(List<String> lines, int promptTokens, int completionTokens, int totalTokens) {
+    }
 
     private static final class BatchTrace {
         private final List<SubtaskTiming> timings = new ArrayList<>();
@@ -405,5 +406,6 @@ public final class Translator {
         }
     }
 
-    private record SubtaskTiming(int subtaskIndex, long elapsedNanos) {}
+    private record SubtaskTiming(int subtaskIndex, long elapsedNanos) {
+    }
 }

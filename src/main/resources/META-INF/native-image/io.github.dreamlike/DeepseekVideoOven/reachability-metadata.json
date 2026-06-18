@@ -7,12 +7,67 @@
       "allPublicConstructors": true,
       "methods": [
         {"name": "ffmpegPath", "parameterTypes": []},
-        {"name": "whisperModelPath", "parameterTypes": []},
-        {"name": "deepseekApiKey", "parameterTypes": []},
-        {"name": "deepseekModel", "parameterTypes": []},
-        {"name": "defaultSourceLang", "parameterTypes": []},
-        {"name": "whisperInitialPrompt", "parameterTypes": []},
-        {"name": "extraTranslationPrompt", "parameterTypes": []}
+        {"name": "sourceLang", "parameterTypes": []},
+        {"name": "asr", "parameterTypes": []},
+        {"name": "translation", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.config.OvenConfig$Asr",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "backend", "parameterTypes": []},
+        {"name": "initialPrompt", "parameterTypes": []},
+        {"name": "whisper", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.config.OvenConfig$Whisper",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "modelPath", "parameterTypes": []}
+      ]
+    },
+      "type": "io.github.dreamlike.deepseekvideooven.config.OvenConfig$Translation",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "backend", "parameterTypes": []},
+        {"name": "extraPrompt", "parameterTypes": []},
+        {"name": "hunyuan", "parameterTypes": []},
+        {"name": "deepseek", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.config.OvenConfig$Hunyuan",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "modelPath", "parameterTypes": []},
+        {"name": "contextSize", "parameterTypes": []},
+        {"name": "gpuLayers", "parameterTypes": []},
+        {"name": "threads", "parameterTypes": []},
+        {"name": "maxTokens", "parameterTypes": []},
+        {"name": "temperature", "parameterTypes": []},
+        {"name": "topP", "parameterTypes": []},
+        {"name": "topK", "parameterTypes": []},
+        {"name": "repeatPenalty", "parameterTypes": []}
+      ]
+    },
+    {
+      "type": "io.github.dreamlike.deepseekvideooven.config.OvenConfig$DeepSeek",
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "methods": [
+        {"name": "apiKey", "parameterTypes": []},
+        {"name": "model", "parameterTypes": []}
       ]
     },
     {
@@ -127,6 +182,14 @@
       {
         "returnType": "void",
         "parameterTypes": ["void*"]
+      },
+      {
+        "returnType": "void*",
+        "parameterTypes": ["void*", "int", "int", "int"]
+      },
+      {
+        "returnType": "void*",
+        "parameterTypes": ["void*", "void*", "void*", "int", "float", "float", "int", "float"]
       }
     ]
   }

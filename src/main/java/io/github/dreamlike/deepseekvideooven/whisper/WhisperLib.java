@@ -1,8 +1,8 @@
 package io.github.dreamlike.deepseekvideooven.whisper;
 
 import io.github.dreamlike.deepseekvideooven.model.SubtitleSegment;
+import io.github.dreamlike.deepseekvideooven.nativebridge.NativeLibraries;
 
-import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -10,18 +10,12 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 
 public final class WhisperLib implements AutoCloseable {
-
-    private static final String NATIVE_RESOURCE_DIR = "native/";
-    private static final String NATIVE_LIB_MANIFEST = NATIVE_RESOURCE_DIR + "libs.txt";
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final MethodHandle INIT_FROM_FILE;
@@ -33,7 +27,7 @@ public final class WhisperLib implements AutoCloseable {
     private static final MethodHandle FREE;
 
     static {
-        findAndLoadBridge();
+        NativeLibraries.loadWhisper();
         var lookup = SymbolLookup.loaderLookup();
         try {
             INIT_FROM_FILE = LINKER.downcallHandle(
@@ -155,88 +149,4 @@ public final class WhisperLib implements AutoCloseable {
         arena.close();
     }
 
-    private static void findAndLoadBridge() {
-        var cl = WhisperLib.class.getClassLoader();
-        try {
-            var tmpDir = Files.createTempDirectory("video-oven-native");
-            tmpDir.toFile().deleteOnExit();
-
-            extractNativeLibs(cl, tmpDir, nativeLibNames(cl));
-            loadNativeLibraries(tmpDir);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to extract native libs from classpath", e);
-        }
-    }
-
-    private static List<String> nativeLibNames(ClassLoader cl) throws IOException {
-        var nativeLibs = new LinkedHashSet<String>();
-
-        try (var manifest = cl.getResourceAsStream(NATIVE_LIB_MANIFEST)) {
-            if (manifest != null) {
-                var content = new String(manifest.readAllBytes(), StandardCharsets.UTF_8);
-                content.lines()
-                        .map(String::trim)
-                        .filter(line -> !line.isEmpty())
-                        .forEach(nativeLibs::add);
-            }
-        }
-
-        addMappedLibraryNames(nativeLibs,
-                "ggml-base", "ggml-cpu", "ggml-blas", "ggml-metal", "ggml-cuda",
-                "ggml", "whisper", "whisper_bridge");
-        return List.copyOf(nativeLibs);
-    }
-
-    private static void addMappedLibraryNames(LinkedHashSet<String> nativeLibs, String... libraryNames) {
-        for (var libraryName : libraryNames) {
-            nativeLibs.add(System.mapLibraryName(libraryName));
-        }
-    }
-
-    private static void extractNativeLibs(ClassLoader cl, Path tmpDir, List<String> nativeLibs) throws IOException {
-        for (var nativeLib : nativeLibs) {
-            validateNativeLibName(nativeLib);
-            try (var in = cl.getResourceAsStream(NATIVE_RESOURCE_DIR + nativeLib)) {
-                if (in == null) {
-                    continue;
-                }
-                var extracted = tmpDir.resolve(nativeLib);
-                Files.copy(in, extracted, StandardCopyOption.REPLACE_EXISTING);
-                extracted.toFile().deleteOnExit();
-            }
-        }
-    }
-
-    private static void validateNativeLibName(String nativeLib) {
-        if (nativeLib.contains("/") || nativeLib.contains("\\") || nativeLib.contains("..")) {
-            throw new RuntimeException("Invalid native library resource name: " + nativeLib);
-        }
-    }
-
-    private static void loadNativeLibraries(Path tmpDir) {
-        loadRequired(tmpDir, System.mapLibraryName("ggml-base"));
-        loadRequired(tmpDir, System.mapLibraryName("ggml-cpu"));
-        loadIfPresent(tmpDir, System.mapLibraryName("ggml-blas"));
-        loadIfPresent(tmpDir, System.mapLibraryName("ggml-metal"));
-        loadIfPresent(tmpDir, System.mapLibraryName("ggml-cuda"));
-        loadRequired(tmpDir, System.mapLibraryName("ggml"));
-        loadRequired(tmpDir, System.mapLibraryName("whisper"));
-        loadRequired(tmpDir, System.mapLibraryName("whisper_bridge"));
-    }
-
-    private static void loadIfPresent(Path tmpDir, String nativeLib) {
-        var lib = tmpDir.resolve(nativeLib);
-        if (Files.exists(lib)) {
-            System.load(lib.toAbsolutePath().toString());
-        }
-    }
-
-    private static void loadRequired(Path tmpDir, String nativeLib) {
-        var lib = tmpDir.resolve(nativeLib);
-        if (!Files.exists(lib)) {
-            throw new RuntimeException("Native lib not found in classpath: " + NATIVE_RESOURCE_DIR + nativeLib
-                    + ". Build with: mvn package");
-        }
-        System.load(lib.toAbsolutePath().toString());
-    }
 }
